@@ -1,0 +1,14 @@
+json
+{
+  "name": "my-first-worker",
+  "version": "1.0.0",
+  "description": "My first Cloudflare Worker",
+  "main": "src/index.js",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^3.72.0"
+  }
+}
