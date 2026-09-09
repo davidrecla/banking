@@ -1,7 +1,12 @@
 export default {
   async fetch(request, env, ctx) {
-    return new Response('Hello world! this is my first worker deployed in Github 2!', {
-      headers: { 'Content-Type': 'text/plain' }
+    const data = {
+      message: 'Hello from Cloudflare Workers branch 2!',
+      timestamp: new Date().toISOString(),
+      path: new URL(request.url).pathname
+    };
+    return new Response(JSON.stringify(data, null, 2), {
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     });
   }
-}; 
+};
