@@ -1,7 +1,7 @@
 javascript
 export default {
   async fetch(request, env, ctx) {
-    return new Response('Hello from Cloudflare Workers!', {
+    return new Response('Hello world! this is my first worker deployed in Github!', {
       headers: { 'Content-Type': 'text/plain' }
     });
   }
