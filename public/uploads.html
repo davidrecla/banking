@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - Documents</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="top-nav">
+    <div><strong>🏦 PGC Bank</strong> — Documents</div>
+    <div>
+      <a href="/dashboard" style="margin-right:16px;">Dashboard</a>
+      <button class="btn-danger" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>Upload a Document</h3>
+    <form id="upload-form">
+      <label for="file-input">Choose file</label>
+      <input id="file-input" type="file" required />
+      <button type="submit" class="btn-primary">Upload</button>
+      <div id="upload-error" class="error-text"></div>
+    </form>
+  </div>
+
+  <div class="section-card">
+    <h3>Your Files</h3>
+    <div id="file-list">Loading...</div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function loadFiles() {
+    const res = await authFetch('/api/uploads');
+    const data = await res.json();
+    const listEl = document.getElementById('file-list');
+
+    if (!data.uploads.length) {
+      listEl.innerHTML = '<p style="color:#6b7280;">No files uploaded yet.</p>';
+      return;
+    }
+
+    listEl.innerHTML = data.uploads.map(f => `
+      <div class="file-row">
+        <div>
+          <strong>${f.filename}</strong>
+          <div style="font-size:12px;color:#9ca3af;">${f.content_type || 'unknown'} · ${formatBytes(f.size)} · ${new Date(f.uploaded_at).toLocaleString()}</div>
+        </div>
+        <div>
+          <button class="btn-secondary" onclick="downloadFile('${f.id}', '${f.filename}')">Download</button>
+          <button class="btn-danger" onclick="deleteFile('${f.id}')">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function downloadFile(id, filename) {
+    const res = await authFetch(`/api/uploads/${id}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function deleteFile(id) {
+    await authFetch(`/api/uploads/${id}`, { method: 'DELETE' });
+    showToast('File deleted');
+    loadFiles();
+  }
+
+  document.getElementById('upload-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('upload-error');
+    errorEl.textContent = '';
+
+    const fileInput = document.getElementById('file-input');
+    if (!fileInput.files.length) return;
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    try {
+      const res = await authFetch('/api/uploads', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Upload failed';
+        return;
+      }
+      showToast('File uploaded!');
+      document.getElementById('upload-form').reset();
+      loadFiles();
+    } catch (err) {
+      errorEl.textContent = 'Network error. Please try again.';
+    }
+  });
+
+  loadFiles();
+</script>
+</body>
+</html>

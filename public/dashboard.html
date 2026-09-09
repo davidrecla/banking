@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - Dashboard</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="top-nav">
+    <div><strong>🏦 PGC Bank</strong> — <span id="welcome-msg"></span></div>
+    <div>
+      <a href="/uploads" style="margin-right:16px;">Documents</a>
+      <button class="btn-danger" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="balance-grid" id="balance-grid">
+    <div class="balance-card">Loading accounts...</div>
+  </div>
+
+  <div class="section-card">
+    <h3>Quick Actions</h3>
+    <div class="quick-actions">
+      <button id="transfer-toggle-btn">💸 Transfer Money</button>
+      <button disabled title="Coming in Phase 2">🧾 Pay Bills</button>
+      <button disabled title="Coming in Phase 2">🏠 Apply for Loan</button>
+      <button disabled title="Coming in Phase 2">📈 Invest</button>
+    </div>
+  </div>
+
+  <div class="section-card" id="transfer-form-section" style="display:none;">
+    <h3>Internal Transfer</h3>
+    <form id="transfer-form">
+      <label for="fromAccount">From Account</label>
+      <select id="fromAccount" required></select>
+
+      <label for="toUsername">Recipient Username</label>
+      <input id="toUsername" required />
+
+      <label for="toAccountType">Recipient Account Type</label>
+      <select id="toAccountType" required>
+        <option value="checking">Checking</option>
+        <option value="savings">Savings</option>
+        <option value="investment">Investment</option>
+      </select>
+
+      <label for="amount">Amount (max $500/txn, $1000/day)</label>
+      <input id="amount" type="number" min="0.01" step="0.01" required />
+
+      <label for="note">Note (optional)</label>
+      <input id="note" />
+
+      <button type="submit" class="btn-primary">Send Transfer</button>
+      <div id="transfer-error" class="error-text"></div>
+    </form>
+  </div>
+
+  <div class="section-card">
+    <h3>Recent Transactions</h3>
+    <p style="color:#6b7280;">Full transaction history and filtering coming in Phase 2.</p>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  requireAuth();
+  const user = getUser();
+  document.getElementById('welcome-msg').textContent = user ? user.fullName : '';
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  let accountsCache = [];
+
+  async function loadAccounts() {
+    const res = await authFetch('/api/accounts');
+    const data = await res.json();
+    accountsCache = data.accounts;
+
+    const icons = { savings: '💰', checking: '💳', investment: '📈' };
+    const grid = document.getElementById('balance-grid');
+    grid.innerHTML = accountsCache.map(acc => `
+      <div class="balance-card">
+        <div>${icons[acc.account_type] || '🏦'} ${acc.account_type.charAt(0).toUpperCase() + acc.account_type.slice(1)}</div>
+        <div class="balance-amount">${formatCurrency(acc.balance)}</div>
+        <div style="font-size:12px;color:#9ca3af;">${acc.account_number}</div>
+      </div>
+    `).join('');
+
+    const fromSelect = document.getElementById('fromAccount');
+    fromSelect.innerHTML = accountsCache.map(acc =>
+      `<option value="${acc.id}">${acc.account_type} (${formatCurrency(acc.balance)})</option>`
+    ).join('');
+  }
+
+  document.getElementById('transfer-toggle-btn').addEventListener('click', () => {
+    const section = document.getElementById('transfer-form-section');
+    section.style.display = section.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.getElementById('transfer-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('transfer-error');
+    errorEl.textContent = '';
+
+    const body = {
+      fromAccountId: document.getElementById('fromAccount').value,
+      toUsername: document.getElementById('toUsername').value.trim(),
+      toAccountType: document.getElementById('toAccountType').value,
+      amount: parseFloat(document.getElementById('amount').value),
+      note: document.getElementById('note').value.trim() || undefined
+    };
+
+    try {
+      const res = await authFetch('/api/transfers/internal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Transfer failed';
+        return;
+      }
+      showToast('Transfer completed!');
+      document.getElementById('transfer-form').reset();
+      loadAccounts();
+    } catch (err) {
+      errorEl.textContent = 'Network error. Please try again.';
+    }
+  });
+
+  loadAccounts();
+</script>
+</body>
+</html>

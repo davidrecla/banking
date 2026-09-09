@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - Login</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="center-screen">
+  <div class="card login-card">
+    <h1>🏦 PGC Bank</h1>
+    <p>Sign in to your account</p>
+
+    <form id="login-form">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required />
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+      <button type="submit" class="btn-primary">Sign In</button>
+      <div id="error-msg" class="error-text"></div>
+    </form>
+
+    <div class="demo-creds">
+      <strong>Demo credentials</strong>
+      <div>chris.brown / cbrown</div>
+      <div>sarah.j / sjohnson</div>
+      <div>mike.d / mdavis</div>
+      <div>emma.w / ewilson</div>
+      <div>admin / admin1</div>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const errorEl = document.getElementById('error-msg');
+    errorEl.textContent = '';
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Login failed';
+        return;
+      }
+      setSession(data.token, data.user);
+      window.location.href = '/dashboard';
+    } catch (err) {
+      errorEl.textContent = 'Network error. Please try again.';
+    }
+  });
+</script>
+</body>
+</html>
