@@ -1,7 +1,7 @@
 export default {
   async fetch(request, env, ctx) {
     const data = {
-      message: 'Hello from Cloudflare Workers!',
+      message: 'Hello from Cloudflare Workers branch 2!',
       timestamp: new Date().toISOString(),
       path: new URL(request.url).pathname
     };
