@@ -4,4 +4,4 @@ export default {
       headers: { 'Content-Type': 'text/plain' }
     });
   }
-};
+}; 
