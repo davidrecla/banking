@@ -145,5 +145,6 @@ vite.config.ts.timestamp-*
 # Wrangler local state
 .wrangler/
 
-# Generated seed command scripts (contain computed password hashes; regenerate via scripts/generate-seed.mjs)
+# Generated seed/update command scripts (contain computed password hashes; regenerate via scripts/generate-seed.mjs or scripts/update-passwords.mjs)
 scripts/seed-commands.ps1
+scripts/update-passwords-commands.ps1

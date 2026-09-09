@@ -21,15 +21,15 @@
 
 ## Demo User Accounts & Password Scheme
 
-Password = first initial of first name + last name (lowercase), **except admin** (kept as originally spec'd).
+Password = first initial of first name + last name + `123` (lowercase); admin uses `admin123`.
 
 | Username | Full Name | Password (plaintext, pre-hash) | Role |
 |---|---|---|---|
-| chris.brown | Chris Brown | `cbrown` | Regular |
-| sarah.j | Sarah Johnson | `sjohnson` | Premium |
-| mike.d | Mike Davis | `mdavis` | Basic |
-| emma.w | Emma Wilson | `ewilson` | VIP |
-| admin | Admin User | `admin1` | Admin |
+| chris.brown | Chris Brown | `cbrown123` | Regular |
+| sarah.johnson | Sarah Johnson | `sjohnson123` | Premium |
+| mike.davis | Mike Davis | `mdavis123` | Basic |
+| emma.wilson | Emma Wilson | `ewilson123` | VIP |
+| admin | Admin User | `admin123` | Admin |
 
 Each user gets 3 accounts (Savings, Checking, Investment), each seeded at **USD 3,000** (USD 9,000 total per user).
 

@@ -11,11 +11,11 @@ import { randomUUID } from 'node:crypto';
 import { hashPassword } from '../src/lib/crypto.js';
 
 const users = [
-  { username: 'chris.brown', fullName: 'Chris Brown', password: 'cbrown', role: 'Regular' },
-  { username: 'sarah.j', fullName: 'Sarah Johnson', password: 'sjohnson', role: 'Premium' },
-  { username: 'mike.d', fullName: 'Mike Davis', password: 'mdavis', role: 'Basic' },
-  { username: 'emma.w', fullName: 'Emma Wilson', password: 'ewilson', role: 'VIP' },
-  { username: 'admin', fullName: 'Admin User', password: 'admin1', role: 'Admin' }
+  { username: 'chris.brown', fullName: 'Chris Brown', password: 'cbrown123', role: 'Regular' },
+  { username: 'sarah.johnson', fullName: 'Sarah Johnson', password: 'sjohnson123', role: 'Premium' },
+  { username: 'mike.davis', fullName: 'Mike Davis', password: 'mdavis123', role: 'Basic' },
+  { username: 'emma.wilson', fullName: 'Emma Wilson', password: 'ewilson123', role: 'VIP' },
+  { username: 'admin', fullName: 'Admin User', password: 'admin123', role: 'Admin' }
 ];
 
 const ACCOUNT_TYPES = ['savings', 'checking', 'investment'];
