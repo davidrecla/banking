@@ -13,3 +13,7 @@ id = "fa8bcc19366b4f68ac9c3ff6ebf54a0b"
 binding = "BANK_DB"
 database_name = "bank-database"
 database_id = "6f12dd90-3093-4b25-adcb-a0e43ece88ac"
+
+[[r2_buckets]]
+binding = "BANK_BUCKET"
+bucket_name = "bank-bucket"
