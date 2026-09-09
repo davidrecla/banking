@@ -1,5 +1,5 @@
 {
-  "name": "my-first-worker",
+  "name": "banking",
   "version": "1.0.0",
   "description": "My first Cloudflare Worker",
   "main": "src/index.js",
