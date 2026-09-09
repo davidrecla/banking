@@ -9,7 +9,7 @@
 <body>
 <div class="app-shell">
   <div class="top-nav">
-    <div><strong>🏦 PGC Bank</strong> — <span id="welcome-msg"></span></div>
+    <div><strong>PGC <span class="brand-mark">BANK</span></strong> — <span id="welcome-msg"></span></div>
     <div>
       <a href="/uploads" style="margin-right:16px;">Documents</a>
       <button class="btn-danger" id="logout-btn">Logout</button>
@@ -23,10 +23,10 @@
   <div class="section-card">
     <h3>Quick Actions</h3>
     <div class="quick-actions">
-      <button id="transfer-toggle-btn">💸 Transfer Money</button>
-      <button disabled title="Coming in Phase 2">🧾 Pay Bills</button>
-      <button disabled title="Coming in Phase 2">🏠 Apply for Loan</button>
-      <button disabled title="Coming in Phase 2">📈 Invest</button>
+      <button id="transfer-toggle-btn">Transfer Money</button>
+      <button disabled title="Coming in Phase 2">Pay Bills</button>
+      <button disabled title="Coming in Phase 2">Apply for Loan</button>
+      <button disabled title="Coming in Phase 2">Invest</button>
     </div>
   </div>
 
@@ -77,11 +77,10 @@
     const data = await res.json();
     accountsCache = data.accounts;
 
-    const icons = { savings: '💰', checking: '💳', investment: '📈' };
     const grid = document.getElementById('balance-grid');
     grid.innerHTML = accountsCache.map(acc => `
       <div class="balance-card">
-        <div>${icons[acc.account_type] || '🏦'} ${acc.account_type.charAt(0).toUpperCase() + acc.account_type.slice(1)}</div>
+        <div style="font-size:13px;font-weight:600;text-transform:uppercase;color:var(--dbs-gray, #484848);letter-spacing:0.5px;">${acc.account_type}</div>
         <div class="balance-amount">${formatCurrency(acc.balance)}</div>
         <div style="font-size:12px;color:#9ca3af;">${acc.account_number}</div>
       </div>
