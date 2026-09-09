@@ -1,13 +1,21 @@
 export default {
   async fetch(request, env, ctx) {
-    const data = {
-      message: 'Hello from Cloudflare Workers Branch-22!',
-      message: 'Hello from Cloudflare Workers Main!!',
-      timestamp: new Date().toISOString(),
-      path: new URL(request.url).pathname
-    };
-    return new Response(JSON.stringify(data, null, 2), {
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-    });
+    const url = new URL(request.url);
+    const key = url.searchParams.get('key');
+    const value = url.searchParams.get('value');
+
+    // Store a value
+    if (key && value) {
+      await env.BANK_KV.put(key, value);
+      return new Response(`Stored: ${key} = ${value}`);
+    }
+
+    // Retrieve a value
+    if (key) {
+      const stored = await env.BANK_KV.get(key);
+      return new Response(`Value: ${stored || 'not found'}`);
+    }
+
+    return new Response('Usage: ?key=name&value=data or ?key=name');
   }
 };

@@ -4,3 +4,7 @@ compatibility_date = "2026-09-01"
 
 [vars]
 ENVIRONMENT = "production"
+
+[[kv_namespaces]]
+binding = "BANK_KV"
+id = "fa8bcc19366b4f68ac9c3ff6ebf54a0b"
