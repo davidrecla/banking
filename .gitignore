@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Wrangler local state
+.wrangler/
+
+# Generated seed/update command scripts (contain computed password hashes; regenerate via scripts/generate-seed.mjs or scripts/update-passwords.mjs)
+scripts/seed-commands.ps1
+scripts/update-passwords-commands.ps1

@@ -21,15 +21,15 @@
 
 ## Demo User Accounts & Password Scheme
 
-Password = first initial of first name + last name (lowercase), **except admin** (kept as originally spec'd).
+Password = first initial of first name + last name + `123` (lowercase); admin uses `admin123`.
 
 | Username | Full Name | Password (plaintext, pre-hash) | Role |
 |---|---|---|---|
-| chris.brown | Chris Brown | `cbrown` | Regular |
-| sarah.j | Sarah Johnson | `sjohnson` | Premium |
-| mike.d | Mike Davis | `mdavis` | Basic |
-| emma.w | Emma Wilson | `ewilson` | VIP |
-| admin | Admin User | `admin1` | Admin |
+| chris.brown | Chris Brown | `cbrown123` | Regular |
+| sarah.johnson | Sarah Johnson | `sjohnson123` | Premium |
+| mike.davis | Mike Davis | `mdavis123` | Basic |
+| emma.wilson | Emma Wilson | `ewilson123` | VIP |
+| admin | Admin User | `admin123` | Admin |
 
 Each user gets 3 accounts (Savings, Checking, Investment), each seeded at **USD 3,000** (USD 9,000 total per user).
 
@@ -153,15 +153,19 @@ KV keys (not D1):
 
 ## Build Phases
 
-### Phase 1 — Foundation (BUILD THIS FIRST)
-- [ ] D1 schema migration: `users`, `accounts`, `transactions`, `uploads` tables
-- [ ] `JWT_SECRET` set as Cloudflare Worker secret
-- [ ] Password hashing utility (PBKDF2 + per-user salt) + seed script for 5 demo users + their 3 accounts each
-- [ ] Auth endpoints: login (JWT, 24h expiry), refresh, logout
-- [ ] `GET /api/accounts`
-- [ ] `POST /api/transfers/internal` (with $500/txn + $1000/day limits via KV counter)
-- [ ] Upload endpoints (`POST/GET/DELETE /api/uploads`) using R2, no restrictions
-- [ ] Basic UI: Login page (with demo credentials shown), Dashboard (3 balance cards, quick actions, recent transactions), Documents/Uploads page
+### Phase 1 — Foundation (BUILD THIS FIRST) — ✅ COMPLETE (on branch `phase-1-foundation`, not yet merged to `main`)
+- [x] D1 schema migration: `users`, `accounts`, `transactions`, `uploads` tables (`schema/001_phase1_initial.sql`)
+- [x] `JWT_SECRET` set as Cloudflare Worker secret
+- [x] Password hashing utility (PBKDF2 + per-user salt) + seed script for 5 demo users + their 3 accounts each (`src/lib/crypto.js`, `scripts/generate-seed.mjs`)
+- [x] Auth endpoints: login (JWT, 24h expiry), refresh, logout (`src/routes/auth.js`)
+- [x] `GET /api/accounts`, `GET /api/accounts/:id` (`src/routes/accounts.js`)
+- [x] `POST /api/transfers/internal` with $500/txn + $1000/day limits via KV counter (`src/routes/transfers.js`)
+- [x] Upload endpoints (`POST/GET/:id/DELETE /api/uploads`) using R2, no restrictions (`src/routes/uploads.js`)
+- [x] Basic UI: Login page (demo credentials shown), Dashboard (balance cards, internal transfer form), Documents/Uploads page (`public/*.html`, `public/app.js`, `public/styles.css`), served via Workers Assets
+
+All Phase 1 endpoints tested end-to-end against the real (remote) D1/KV/R2 resources via `wrangler dev --remote` — login, wrong-password rejection, unauthenticated rejection, internal transfer (success + over-limit rejection), and upload/list/download/delete all verified working.
+
+**Known issue / workaround:** `wrangler d1 execute --file=...` fails with a generic `fetch failed` error on this network (the file-upload-based ingestion path hits a different endpoint than direct `--command` queries, which work fine). Workaround: split schema/seed SQL into individual statements and run each via `wrangler d1 execute --remote --command="..."` instead of `--file`. This is what `scripts/generate-seed.mjs` does (it emits a `.ps1` of individual `--command` calls rather than a single `.sql` file to upload).
 
 ### Phase 2 — Extended Banking Features
 - [ ] D1 schema additions: `bills`, `payees`, `loans`, `investments`
@@ -197,9 +201,10 @@ KV keys (not D1):
 
 ## Current Cloudflare Resources Already Provisioned
 - Worker: `banking` (deployed at `banking.davidrecla.workers.dev`, GitHub-connected via Workers Builds, production branch `main`)
-- D1: `bank-database` (id `6f12dd90-3093-4b25-adcb-a0e43ece88ac`), binding `BANK_DB`
-- KV: `BANK_KV` (id `fa8bcc19366b4f68ac9c3ff6ebf54a0b`)
-- R2: `bank-bucket`, binding `BANK_BUCKET`
+- D1: `bank-database` (id `6f12dd90-3093-4b25-adcb-a0e43ece88ac`), binding `BANK_DB` — schema applied (`users`, `accounts`, `transactions`, `uploads`), seeded with 5 demo users + 15 accounts ($3000 each, $45,000 total)
+- KV: `BANK_KV` (id `fa8bcc19366b4f68ac9c3ff6ebf54a0b`) — used for rate-limit counters
+- R2: `bank-bucket`, binding `BANK_BUCKET` — used for user uploads (Phase 1) and will store generated statements (Phase 3)
+- Secret: `JWT_SECRET` set on the `banking` Worker (48 random bytes, base64-encoded)
 
 ## Repo/Workflow Notes
 - Repo: `davidrecla/banking` on GitHub

@@ -1,38 +1,58 @@
+import { authenticate, errorResponse } from './lib/auth.js';
+import { handleLogin, handleRefresh, handleLogout } from './routes/auth.js';
+import { handleGetAccounts, handleGetAccount } from './routes/accounts.js';
+import { handleInternalTransfer } from './routes/transfers.js';
+import { handleUploadFile, handleListUploads, handleDownloadUpload, handleDeleteUpload } from './routes/uploads.js';
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+};
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const { pathname } = url;
+    const method = request.method;
 
-    // File upload/download via R2
-    if (url.pathname === '/file') {
-      if (request.method === 'POST') {
-        const file = await request.arrayBuffer();
-        await env.BANK_BUCKET.put('uploaded-file.bin', file);
-        return new Response('Uploaded!');
-      }
-
-      const object = await env.BANK_BUCKET.get('uploaded-file.bin');
-      if (!object) {
-        return new Response('Not found', { status: 404 });
-      }
-
-      return new Response(object.body);
+    if (method === 'OPTIONS') {
+      return new Response(null, { headers: CORS_HEADERS });
     }
 
-    const key = url.searchParams.get('key');
-    const value = url.searchParams.get('value');
-
-    // Store a value
-    if (key && value) {
-      await env.BANK_KV.put(key, value);
-      return new Response(`Stored: ${key} = ${value}`);
+    if (!pathname.startsWith('/api/')) {
+      // Non-API requests are served by Workers Assets (see [assets] in
+      // wrangler.toml); if we reach here, no matching static file exists.
+      return new Response('Not found', { status: 404 });
     }
 
-    // Retrieve a value
-    if (key) {
-      const stored = await env.BANK_KV.get(key);
-      return new Response(`Value: ${stored || 'not found'}`);
-    }
+    try {
+      // --- Public routes (no auth) ---
+      if (pathname === '/api/auth/login' && method === 'POST') return await handleLogin(request, env);
+      if (pathname === '/api/auth/refresh' && method === 'POST') return await handleRefresh(request, env);
+      if (pathname === '/api/auth/logout' && method === 'POST') return await handleLogout(request, env);
 
-    return new Response('Usage: ?key=name&value=data or ?key=name');
+      // --- Protected routes (require valid JWT) ---
+      const auth = await authenticate(request, env);
+      if (!auth) return errorResponse('Unauthorized', 401);
+
+      if (pathname === '/api/accounts' && method === 'GET') return await handleGetAccounts(request, env, auth);
+
+      const accountMatch = pathname.match(/^\/api\/accounts\/([^/]+)$/);
+      if (accountMatch && method === 'GET') return await handleGetAccount(request, env, auth, accountMatch[1]);
+
+      if (pathname === '/api/transfers/internal' && method === 'POST') return await handleInternalTransfer(request, env, auth);
+
+      if (pathname === '/api/uploads' && method === 'POST') return await handleUploadFile(request, env, auth);
+      if (pathname === '/api/uploads' && method === 'GET') return await handleListUploads(request, env, auth);
+
+      const uploadMatch = pathname.match(/^\/api\/uploads\/([^/]+)$/);
+      if (uploadMatch && method === 'GET') return await handleDownloadUpload(request, env, auth, uploadMatch[1]);
+      if (uploadMatch && method === 'DELETE') return await handleDeleteUpload(request, env, auth, uploadMatch[1]);
+
+      return errorResponse('Not found', 404);
+    } catch (err) {
+      return errorResponse(`Internal error: ${err.message}`, 500);
+    }
   }
 };
