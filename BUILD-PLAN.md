@@ -49,7 +49,7 @@ banking/
 │   ├── generate-seed.mjs      # Generates .ps1 of wrangler d1 execute --command calls to seed 5 demo users + 15 accounts
 │   ├── update-passwords.mjs   # Generates .ps1 of UPDATE statements to change existing users' passwords (used when password scheme changed post-seed)
 │   ├── generate-phase2-schema.mjs  # Emits .ps1 applying schema/002_phase2.sql one statement at a time
-│   └── generate-transactions.mjs   # Emits .ps1 seeding ~90 mock transactions over 6 months (needs an accounts.json dump; see its header)
+│   └── generate-transactions.mjs   # Emits .ps1 seeding ~95 mock transactions over 6 months AND the balances they imply (needs an accounts.json dump; see its header)
 ├── wrangler.toml               # Worker config: bindings (D1/KV/R2/Assets), no secrets here (JWT_SECRET is a real Cloudflare secret)
 ├── package.json
 └── BUILD-PLAN.md               # This file
@@ -86,7 +86,7 @@ Password = first initial of first name + last name + `123` (lowercase); admin us
 | emma.wilson | Emma Wilson | `ewilson123` | VIP |
 | admin | Admin User | `admin123` | Admin |
 
-Each user has 3 accounts (Savings, Checking, Investment), seeded at **USD 3,000 each** (USD 9,000 total per user, USD 45,000 across all 5 users). Note: live balances have since shifted slightly from test transfers made during development (e.g. chris.brown ↔ sarah.johnson) — this is expected and fine for a demo.
+Each user has 3 accounts (Savings, Checking, Investment). Each account **opens** at USD 3,000 via a visible "Opening balance" deposit, but the **current balance is whatever the seeded transaction history produces** (roughly $1.6k–$9.3k per account) — because the ledger reconciles against the balance. See "The ledger reconciles" under Phase 2 below. Do not assume balances are a flat $3,000.
 
 **These credentials are intentionally NOT shown anywhere in the UI** (the login page used to display them but this was removed per instruction — this file is now the only place they're documented). If you reset/reseed the database, use `scripts/generate-seed.mjs` or `scripts/update-passwords.mjs` (see "Local Environment Notes" for how to run them, since a network quirk prevents the straightforward `wrangler d1 execute --file` approach).
 
@@ -387,7 +387,7 @@ Observed during Phase 2 testing: a SQLi-shaped query string (`?sort=amount;DROP+
 ### Phase 1 — Foundation — ✅ COMPLETE AND MERGED TO MAIN (live in production)
 - [x] D1 schema: `users`, `accounts`, `transactions`, `uploads`
 - [x] `JWT_SECRET` set as a Cloudflare Worker secret
-- [x] Password hashing (PBKDF2 + per-user salt) + seed script; 5 demo users × 3 accounts × $3000 seeded
+- [x] Password hashing (PBKDF2 + per-user salt) + seed script; 5 demo users × 3 accounts × $3000 seeded (balances later became ledger-derived in Phase 2 — see "The ledger reconciles")
 - [x] Auth endpoints: login (JWT, 24h expiry, rate-limited), refresh, logout
 - [x] `GET /api/accounts`, `GET /api/accounts/:id`
 - [x] `POST /api/transfers/internal` with $500/txn + $1000/day limits
@@ -409,11 +409,25 @@ Delivered as four PRs so each stayed independently reviewable: #8 schema + trans
 - [x] Loan application endpoints (`src/routes/loans.js`, auto-approve <$2k and disburse, manual review ≥$2k) + `public/loans.html` with live monthly payment calculator
 - [x] Investment endpoints (`src/routes/investments.js`, 4 plans) + `public/investments.html` with projected return calculator and withdrawal
 - [x] External transfer endpoint (5 mock banks, $1000/txn, $2.50 fee) + all-or-nothing batch transfer endpoint (extended `src/routes/transfers.js`) + `public/transfers.html`
-- [x] Transaction history endpoint (filter/search/sort/paginate) + `public/transactions.html`; ~90 mock transactions over 6 months seeded via `scripts/generate-transactions.mjs`
+- [x] Transaction history endpoint (filter/search/sort/paginate) + `public/transactions.html`; 95 mock transactions over 6 months seeded via `scripts/generate-transactions.mjs`, with balances derived from the history so the ledger reconciles
 - [x] Wired up every dashboard quick-action button
 - [x] Updated this file's endpoint/schema/phase sections
 
-**Post-Phase-2 data baseline.** Phase 2 was tested against live D1, then cleaned up. Verified state: all 15 accounts at exactly **$3000**, `loans`/`investments`/`transfers`/`bills`/`payees` all **empty**, **92** transactions (90 seeded + the 2 original Phase 1 test transfers), 13 categories, 7 types. If a future session's counts differ, that is leftover test data rather than seed data. Note the seeded transactions deliberately **do not** reconcile against balances — they are display history only.
+**Post-Phase-2 data baseline.** Phase 2 was tested against live D1, then cleaned up and reseeded. Verified state: **95** transactions (15 opening deposits + 80 activity rows), 86 completed / 5 pending / 4 failed, 14 categories, 7 types, spanning ~6 months; `loans`/`investments`/`transfers`/`bills`/`payees` all **empty**; no negative balances. Balances are **no longer** a flat $3000 — they are whatever the ledger produces (roughly $1.6k–$9.3k). If a future session's counts differ, that is leftover test data rather than seed data.
+
+### The ledger reconciles — keep it that way
+
+**Invariant: for every account, `balance == sum(completed credits) - sum(completed debits)`**, where credits are `deposit`/`transfer_in` and debits are everything else. Verified across all 15 accounts in live D1.
+
+This was not true originally: the first version of `generate-transactions.mjs` wrote random rows and never touched balances, so adding up the history did not produce the displayed balance — the kind of thing a customer notices immediately in a banking demo. `scripts/generate-transactions.mjs` now simulates the run chronologically instead:
+
+- Each account opens with a visible **$3000 "Opening balance" deposit** (category `opening`), so the history fully explains the balance.
+- Debits that would overdraw an account are **skipped**, so no balance goes negative.
+- Transfers between demo users are written as **real double-entry pairs** — a `transfer_out` on the source and a matching `transfer_in` on the destination with the same amount and timestamp. Cross-checking two demo accounts shows both halves (verified 10/10).
+- Rows with status `pending` or `failed` deliberately **do not** move the balance, mirroring how a real ledger treats unsettled entries. Statuses are assigned on a fixed cadence rather than by random draw, because a random draw once produced zero `pending` rows and left that status pill undemonstrable.
+- The RNG is seeded from a constant (`SEED` in the script) so re-running produces identical data and demos stay reproducible.
+
+**If you reseed, re-check the invariant** with the query in the PR that introduced this (`fix/reconciling-ledger`), or simply re-derive it: group `transactions` by `account_id`, sum completed credits minus completed debits, compare to `accounts.balance`. Any future feature that moves money must write its ledger row in the same `batch()` as the balance update — as bills, loans, investments and transfers all already do — or this invariant silently breaks.
 
 ### Phase 3 — Statements, Cards, Notifications (START HERE NEXT)
 - [ ] `pdf-lib` integration (`bun add pdf-lib` — first non-trivial dependency in this project, verify it bundles fine with `wrangler deploy`); generate statement PDFs, store in R2 (`statements/{userId}/{statementId}.pdf`)
