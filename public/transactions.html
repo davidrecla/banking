@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - Transactions</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="top-nav">
+    <div><strong>PGC <span class="brand-mark">BANK</span></strong> &mdash; Transactions</div>
+    <div>
+      <a href="/dashboard" style="margin-right:16px;">Dashboard</a>
+      <a href="/uploads" style="margin-right:16px;">Documents</a>
+      <button class="btn-danger" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>Filter &amp; Search</h3>
+    <form id="filter-form">
+      <div class="filter-grid">
+        <div>
+          <label for="f-search">Search</label>
+          <input id="f-search" placeholder="Merchant or description" />
+        </div>
+        <div>
+          <label for="f-account">Account</label>
+          <select id="f-account"><option value="">All accounts</option></select>
+        </div>
+        <div>
+          <label for="f-type">Type</label>
+          <select id="f-type">
+            <option value="">All types</option>
+            <option value="deposit">Deposit</option>
+            <option value="withdrawal">Withdrawal</option>
+            <option value="transfer_in">Transfer in</option>
+            <option value="transfer_out">Transfer out</option>
+            <option value="bill_payment">Bill payment</option>
+            <option value="loan_payment">Loan payment</option>
+            <option value="investment_purchase">Investment purchase</option>
+          </select>
+        </div>
+        <div>
+          <label for="f-category">Category</label>
+          <input id="f-category" placeholder="e.g. groceries" />
+        </div>
+        <div>
+          <label for="f-from">From date</label>
+          <input id="f-from" type="date" />
+        </div>
+        <div>
+          <label for="f-to">To date</label>
+          <input id="f-to" type="date" />
+        </div>
+        <div>
+          <label for="f-min">Min amount</label>
+          <input id="f-min" type="number" min="0" step="0.01" />
+        </div>
+        <div>
+          <label for="f-max">Max amount</label>
+          <input id="f-max" type="number" min="0" step="0.01" />
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button type="submit" class="btn-primary btn-inline">Apply Filters</button>
+        <button type="button" class="btn-secondary" id="reset-btn">Reset</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="section-card">
+    <h3>History</h3>
+    <div id="result-summary" class="result-summary"></div>
+    <div class="txn-table-wrap">
+      <table class="txn-table">
+        <thead>
+          <tr>
+            <th class="sortable" data-sort="created_at">Date</th>
+            <th class="sortable" data-sort="merchant">Merchant</th>
+            <th class="sortable" data-sort="type">Type</th>
+            <th class="sortable" data-sort="category">Category</th>
+            <th>Account</th>
+            <th>Status</th>
+            <th class="sortable align-right" data-sort="amount">Amount</th>
+          </tr>
+        </thead>
+        <tbody id="txn-body">
+          <tr><td colspan="7">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination-bar">
+      <button class="btn-secondary" id="prev-btn" disabled>Previous</button>
+      <span id="page-label"></span>
+      <button class="btn-secondary" id="next-btn" disabled>Next</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  const LIMIT = 25;
+  const CREDIT_TYPES = ['deposit', 'transfer_in'];
+
+  const state = { sort: 'created_at', order: 'desc', offset: 0, total: 0 };
+
+  async function loadAccounts() {
+    const res = await authFetch('/api/accounts');
+    const data = await res.json();
+    const select = document.getElementById('f-account');
+    select.innerHTML =
+      '<option value="">All accounts</option>' +
+      data.accounts
+        .map((a) => `<option value="${a.id}">${a.account_type} (${a.account_number})</option>`)
+        .join('');
+  }
+
+  function buildQuery() {
+    const params = new URLSearchParams();
+    const add = (key, value) => { if (value) params.set(key, value); };
+
+    add('search', document.getElementById('f-search').value.trim());
+    add('accountId', document.getElementById('f-account').value);
+    add('type', document.getElementById('f-type').value);
+    add('category', document.getElementById('f-category').value.trim());
+    add('from', document.getElementById('f-from').value);
+    add('to', document.getElementById('f-to').value);
+    add('minAmount', document.getElementById('f-min').value);
+    add('maxAmount', document.getElementById('f-max').value);
+
+    params.set('sort', state.sort);
+    params.set('order', state.order);
+    params.set('limit', LIMIT);
+    params.set('offset', state.offset);
+    return params.toString();
+  }
+
+  async function loadTransactions() {
+    const body = document.getElementById('txn-body');
+    body.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
+
+    const res = await authFetch(`/api/transactions?${buildQuery()}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      body.innerHTML = `<tr><td colspan="7" class="error-text">${data.error || 'Failed to load'}</td></tr>`;
+      return;
+    }
+
+    state.total = data.pagination.total;
+
+    if (!data.transactions.length) {
+      body.innerHTML = '<tr><td colspan="7" style="color:var(--dbs-gray);">No transactions match these filters.</td></tr>';
+    } else {
+      body.innerHTML = data.transactions.map((t) => {
+        const isCredit = CREDIT_TYPES.includes(t.type);
+        return `
+          <tr>
+            <td>${new Date(t.created_at).toLocaleDateString()}</td>
+            <td>${escapeHtml(t.merchant || '-')}</td>
+            <td>${t.type.replace(/_/g, ' ')}</td>
+            <td>${escapeHtml(t.category || '-')}</td>
+            <td>${t.account_type}</td>
+            <td><span class="status-pill status-${t.status}">${t.status}</span></td>
+            <td class="align-right ${isCredit ? 'amount-credit' : 'amount-debit'}">
+              ${isCredit ? '+' : '-'}${formatCurrency(t.amount)}
+            </td>
+          </tr>`;
+      }).join('');
+    }
+
+    const shown = data.transactions.length;
+    const start = shown ? state.offset + 1 : 0;
+    document.getElementById('result-summary').textContent =
+      `Showing ${start}-${state.offset + shown} of ${state.total}`;
+    document.getElementById('page-label').textContent =
+      `Page ${Math.floor(state.offset / LIMIT) + 1} of ${Math.max(1, Math.ceil(state.total / LIMIT))}`;
+    document.getElementById('prev-btn').disabled = state.offset === 0;
+    document.getElementById('next-btn').disabled = !data.pagination.hasMore;
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  document.getElementById('filter-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    state.offset = 0;
+    loadTransactions();
+  });
+
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    document.getElementById('filter-form').reset();
+    state.offset = 0;
+    state.sort = 'created_at';
+    state.order = 'desc';
+    updateSortIndicators();
+    loadTransactions();
+  });
+
+  document.getElementById('prev-btn').addEventListener('click', () => {
+    state.offset = Math.max(0, state.offset - LIMIT);
+    loadTransactions();
+  });
+
+  document.getElementById('next-btn').addEventListener('click', () => {
+    state.offset += LIMIT;
+    loadTransactions();
+  });
+
+  document.querySelectorAll('th.sortable').forEach((th) => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (state.sort === key) {
+        state.order = state.order === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sort = key;
+        state.order = 'desc';
+      }
+      state.offset = 0;
+      updateSortIndicators();
+      loadTransactions();
+    });
+  });
+
+  function updateSortIndicators() {
+    document.querySelectorAll('th.sortable').forEach((th) => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.sort === state.sort) {
+        th.classList.add(state.order === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
+    });
+  }
+
+  updateSortIndicators();
+  loadAccounts();
+  loadTransactions();
+</script>
+</body>
+</html>
