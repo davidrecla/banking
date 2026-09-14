@@ -1,4 +1,5 @@
 import { jsonResponse, errorResponse } from '../lib/auth.js';
+import { loadDebitableAccount } from '../lib/accounts.js';
 
 const MIN_AMOUNT = 100;
 const MAX_AMOUNT = 5000;
@@ -89,11 +90,9 @@ export async function handleCreateInvestment(request, env, auth) {
     return errorResponse(`durationMonths for ${plan.name} must be one of: ${plan.durations.join(', ')}`, 400);
   }
 
-  const account = await env.BANK_DB
-    .prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?')
-    .bind(fromAccountId, auth.sub)
-    .first();
-  if (!account) return errorResponse('Source account not found', 404);
+  const source = await loadDebitableAccount(env, auth, fromAccountId, 'Source account not found');
+  if (source.response) return source.response;
+  const account = source.account;
   if (account.balance < amount) return errorResponse('Insufficient funds', 400);
 
   const projectedReturn = projectedReturnFor(amount, durationMonths, plan.annualRate);

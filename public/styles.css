@@ -273,6 +273,54 @@ th.sort-desc::after { content: " \2193"; color: var(--dbs-red); }
   .batch-row .btn-danger { grid-column: span 2; }
 }
 
+/* ---- Payment cards ---- */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+}
+.bank-card {
+  border: 1px solid var(--dbs-border);
+  border-top: 3px solid var(--dbs-red);
+  border-radius: 6px;
+  padding: 18px;
+  background: #fff;
+}
+/* Blocked cards read as inactive without hiding the details. */
+.bank-card-blocked { background: var(--dbs-gray-light); opacity: 0.75; }
+.bank-card-top { display: flex; justify-content: space-between; align-items: center; }
+.bank-card-type {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--dbs-gray);
+}
+.bank-card-number {
+  font-family: "Courier New", monospace;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin: 18px 0;
+}
+.bank-card-row { display: flex; gap: 22px; }
+.bank-card-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dbs-gray);
+}
+.bank-card-value { font-size: 13px; font-weight: 600; }
+.bank-card-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dbs-border);
+  font-size: 12px;
+  color: var(--dbs-gray);
+  text-transform: capitalize;
+}
+.bank-card-action { margin-top: 12px !important; }
+
 .toast {
   position: fixed;
   bottom: 24px;

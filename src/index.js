@@ -1,6 +1,7 @@
 import { authenticate, errorResponse } from './lib/auth.js';
 import { handleLogin, handleRefresh, handleLogout } from './routes/auth.js';
-import { handleGetAccounts, handleGetAccount } from './routes/accounts.js';
+import { handleGetAccounts, handleGetAccount, handleFreezeAccount, handleUnfreezeAccount } from './routes/accounts.js';
+import { handleGetCards, handleBlockCard, handleUnblockCard } from './routes/cards.js';
 import { handleInternalTransfer, handleExternalTransfer, handleBatchTransfer, handleGetExternalBanks, handleGetTransfers } from './routes/transfers.js';
 import { handleGetTransactions, handleGetTransaction } from './routes/transactions.js';
 import { handleGetPayees, handleCreatePayee, handleDeletePayee, handlePayBill, handleGetBills } from './routes/bills.js';
@@ -45,6 +46,22 @@ export default {
 
       const accountMatch = pathname.match(/^\/api\/accounts\/([^/]+)$/);
       if (accountMatch && method === 'GET') return await handleGetAccount(request, env, auth, accountMatch[1]);
+
+      const freezeMatch = pathname.match(/^\/api\/accounts\/([^/]+)\/(freeze|unfreeze)$/);
+      if (freezeMatch && method === 'POST') {
+        return freezeMatch[2] === 'freeze'
+          ? await handleFreezeAccount(request, env, auth, freezeMatch[1])
+          : await handleUnfreezeAccount(request, env, auth, freezeMatch[1]);
+      }
+
+      if (pathname === '/api/cards' && method === 'GET') return await handleGetCards(request, env, auth);
+
+      const cardMatch = pathname.match(/^\/api\/cards\/([^/]+)\/(block|unblock)$/);
+      if (cardMatch && method === 'POST') {
+        return cardMatch[2] === 'block'
+          ? await handleBlockCard(request, env, auth, cardMatch[1])
+          : await handleUnblockCard(request, env, auth, cardMatch[1]);
+      }
 
       if (pathname === '/api/transfers/internal' && method === 'POST') return await handleInternalTransfer(request, env, auth);
       if (pathname === '/api/transfers/external' && method === 'POST') return await handleExternalTransfer(request, env, auth);

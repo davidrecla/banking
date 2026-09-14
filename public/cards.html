@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - Cards &amp; Account Security</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="top-nav">
+    <div><strong>PGC <span class="brand-mark">BANK</span></strong> &mdash; Cards &amp; Security</div>
+    <div>
+      <a href="/dashboard" style="margin-right:16px;">Dashboard</a>
+      <a href="/transactions" style="margin-right:16px;">Transactions</a>
+      <button class="btn-danger" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>Your Cards</h3>
+    <div class="card-grid" id="card-grid">Loading...</div>
+  </div>
+
+  <div class="section-card">
+    <h3>Account Freeze</h3>
+    <p style="font-size:13px;color:var(--dbs-gray);margin-top:0;">
+      Freezing an account blocks all outgoing payments and transfers from it. Incoming
+      money is still accepted, and you can unfreeze at any time.
+    </p>
+    <div id="freeze-list">Loading...</div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  async function loadCards() {
+    const res = await authFetch('/api/cards');
+    const data = await res.json();
+    const grid = document.getElementById('card-grid');
+
+    if (!data.cards.length) {
+      grid.innerHTML = '<p style="color:var(--dbs-gray);">No cards issued.</p>';
+      return;
+    }
+
+    grid.innerHTML = data.cards.map((c) => {
+      const blocked = c.status === 'blocked';
+      return `
+        <div class="bank-card ${blocked ? 'bank-card-blocked' : ''}">
+          <div class="bank-card-top">
+            <span class="bank-card-type">${c.card_type}</span>
+            <span class="status-pill status-${blocked ? 'failed' : 'completed'}">${c.status}</span>
+          </div>
+          <div class="bank-card-number">${escapeHtml(c.card_number_masked)}</div>
+          <div class="bank-card-row">
+            <div>
+              <div class="bank-card-label">Card Holder</div>
+              <div class="bank-card-value">${escapeHtml(c.card_holder)}</div>
+            </div>
+            <div>
+              <div class="bank-card-label">Expires</div>
+              <div class="bank-card-value">${escapeHtml(c.expiry)}</div>
+            </div>
+            <div>
+              <div class="bank-card-label">CVV</div>
+              <div class="bank-card-value">${escapeHtml(c.cvv_masked)}</div>
+            </div>
+          </div>
+          <div class="bank-card-footer">
+            Linked to ${c.account_type} ${escapeHtml(c.account_number)}
+          </div>
+          <button class="${blocked ? 'btn-primary' : 'btn-danger'} bank-card-action"
+                  onclick="toggleCard('${c.id}', ${blocked})">
+            ${blocked ? 'Unblock Card' : 'Block Card'}
+          </button>
+        </div>`;
+    }).join('');
+  }
+
+  async function toggleCard(id, blocked) {
+    const action = blocked ? 'unblock' : 'block';
+    const res = await authFetch(`/api/cards/${id}/${action}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Action failed', true);
+      return;
+    }
+    showToast(data.message);
+    loadCards();
+  }
+
+  async function loadAccounts() {
+    const res = await authFetch('/api/accounts');
+    const data = await res.json();
+    const listEl = document.getElementById('freeze-list');
+
+    listEl.innerHTML = data.accounts.map((a) => {
+      const frozen = Boolean(a.frozen);
+      return `
+        <div class="file-row">
+          <div>
+            <strong style="text-transform:capitalize;">${a.account_type}</strong>
+            <span class="status-pill status-${frozen ? 'failed' : 'completed'}" style="margin-left:8px;">
+              ${frozen ? 'frozen' : 'active'}
+            </span>
+            <div style="font-size:12px;color:var(--dbs-gray);">
+              ${escapeHtml(a.account_number)} &middot; ${formatCurrency(a.balance)}
+            </div>
+          </div>
+          <button class="${frozen ? 'btn-primary' : 'btn-danger'}" style="width:auto;margin-top:0;"
+                  onclick="toggleFreeze('${a.id}', ${frozen})">
+            ${frozen ? 'Unfreeze' : 'Freeze'}
+          </button>
+        </div>`;
+    }).join('');
+  }
+
+  async function toggleFreeze(id, frozen) {
+    const action = frozen ? 'unfreeze' : 'freeze';
+    if (!frozen && !confirm('Freezing this account will block all outgoing payments and transfers from it. Continue?')) {
+      return;
+    }
+    const res = await authFetch(`/api/accounts/${id}/${action}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Action failed', true);
+      return;
+    }
+    showToast(data.message);
+    loadAccounts();
+  }
+
+  loadCards();
+  loadAccounts();
+</script>
+</body>
+</html>

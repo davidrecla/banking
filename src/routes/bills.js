@@ -1,4 +1,5 @@
 import { jsonResponse, errorResponse } from '../lib/auth.js';
+import { loadDebitableAccount } from '../lib/accounts.js';
 
 const MAX_PER_TRANSACTION = 2000;
 
@@ -100,11 +101,9 @@ export async function handlePayBill(request, env, auth) {
     return errorResponse(`billType must be one of: ${BILL_TYPES.join(', ')}`, 400);
   }
 
-  const account = await env.BANK_DB
-    .prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?')
-    .bind(fromAccountId, auth.sub)
-    .first();
-  if (!account) return errorResponse('Source account not found', 404);
+  const source = await loadDebitableAccount(env, auth, fromAccountId, 'Source account not found');
+  if (source.response) return source.response;
+  const account = source.account;
   if (account.balance < amount) return errorResponse('Insufficient funds', 400);
 
   const now = new Date().toISOString();

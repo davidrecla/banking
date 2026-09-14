@@ -154,4 +154,5 @@ scripts/update-passwords-commands.ps1
 scripts/phase2-schema.ps1
 scripts/schema-*.ps1
 scripts/transactions-seed.ps1
+scripts/cards-seed.ps1
 scripts/accounts.json
