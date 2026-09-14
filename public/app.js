@@ -26,7 +26,7 @@ function clearSession() {
 /** Redirect to login if not authenticated. Call at the top of protected pages. */
 function requireAuth() {
   if (!getToken()) {
-    window.location.href = '/';
+    window.location.href = '/login';
   }
 }
 
@@ -39,7 +39,7 @@ async function authFetch(path, options = {}) {
   const res = await fetch(path, { ...options, headers });
   if (res.status === 401) {
     clearSession();
-    window.location.href = '/';
+    window.location.href = '/login';
     throw new Error('Unauthorized');
   }
   return res;
@@ -52,7 +52,7 @@ async function logout() {
     // ignore
   }
   clearSession();
-  window.location.href = '/';
+  window.location.href = '/login';
 }
 
 function formatCurrency(amount) {
