@@ -21,6 +21,10 @@ custom_domain = true
 [[kv_namespaces]]
 binding = "BANK_KV"
 id = "fa8bcc19366b4f68ac9c3ff6ebf54a0b"
+# Separate namespace for `wrangler dev`, which refuses to start against the
+# production KV id. Rate-limit counters written while developing land here
+# instead of in production.
+preview_id = "5870aa99099a4e6a99ed8301ec90df68"
 
 [[d1_databases]]
 binding = "BANK_DB"
@@ -30,6 +34,9 @@ database_id = "6f12dd90-3093-4b25-adcb-a0e43ece88ac"
 [[r2_buckets]]
 binding = "BANK_BUCKET"
 bucket_name = "bank-bucket"
+# Same reason as the KV preview_id above: `wrangler dev` refuses to start
+# against the production bucket, so dev uploads go here.
+preview_bucket_name = "bank-bucket-preview"
 
 [assets]
 directory = "./public"
