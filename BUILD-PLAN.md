@@ -428,14 +428,23 @@ blockers above — schema validation + fallthrough rule, JWT validation rules,
 rate limiting rules, managed WAF rules, mTLS — are the live-demo backbone;
 position the ML features as "what production sees over weeks."
 
-### Entitlements to verify on the account before demo day
+### Entitlements — VERIFIED on the account
 
-- **API Shield subscription active at both account and zone level** — API
-  Discovery does not run otherwise (`puregroundscoffee.com` zone).
-- **WAF malicious uploads detection is an Enterprise add-on** — needed for the
-  EICAR content-scanning demo. If the zone lacks it, that surface is cut.
-- **Zone plan tier sets the request body limit** (Free/Pro 100 MB, Business
-  200 MB, Enterprise 500 MB) — determines the oversized-batch demo's 413.
+- **Zone plan: Enterprise** (`puregroundscoffee.com`, id `43dd610e196766bc22f86638e1f087c4`).
+- **WAF malicious uploads detection: enabled** on the zone (the EICAR block lives zone-side; the only blocker is this machine's own Gateway egress policy).
+- **API Shield endpoints respond** for the zone (schema upload + operations API work — schema 91d2a8e1 and 41 endpoint-management ops are uploaded/synced).
+
+### Zone configuration is staged, scripted, and idempotent
+
+`scripts/demo-edge-config.py` (sync/arm/disarm/status) owns all six "PGC demo:"
+edge rules plus schema validation's action: fallthrough block, unauthenticated
+internal-debug block, content-scan block, query-string block on /api/profile,
+and three rate-limit rules (BOLA enumeration, express burst, loan/investment
+spam). Verified end-to-end: arm → after-run 11/11 BLOCKED with legitimate
+traffic unaffected; disarm → before-run 11/11 VULNERABLE. **Leave the zone
+disarmed between rehearsals.** Optional-not-required extra: native API Shield
+JWT validation (role-claim rule) needs the JWT secret pasted in the dashboard —
+the staged custom rules cover the demo without it.
 
 **Do not implement these until Phase 4**, and only on separate, clearly-named
 endpoints — keep them isolated from the legitimate API surface so the
@@ -546,7 +555,7 @@ Delivered as three PRs: #14 statements + schema + lockfile, #15 cards + enforced
 ### Phase 5 — Optional Stretch
 - [ ] mTLS protection for `/api/internal/*` routes
 - [x] Custom domain setup (`banking.puregroundscoffee.com`) — done early, see Phase 1.5
-- [ ] Configure API Shield in Cloudflare dashboard: upload OpenAPI schema, enable BOLA/rate-limit/JWT validation features, run attack simulations end-to-end
+- [x] Configure API Shield + WAF for the demo: done via `scripts/demo-edge-config.py` (schema uploaded, operations synced, six protective rules staged, arm/disarm verified end-to-end against production). See POC-ATTACK-GUIDE.html for the meeting runbook. Remaining Phase 5 scope: mTLS and the optional JWT-validation upgrade
 
 ---
 

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POC Banking Attack Guide — PGC Bank × Cloudflare</title>
+<style>
+  :root {
+    --red: #d81f1f; --black: #000; --gray: #484848; --light: #f5f5f5;
+    --border: #e0e0e0; --green: #1a7f37; --amber: #8a5a00;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; margin: 0; color: #1a1a1a; background: #fff; line-height: 1.5; }
+  header { background: var(--black); color: #fff; padding: 28px 40px; border-bottom: 6px solid var(--red); }
+  header h1 { margin: 0 0 4px; font-size: 24px; }
+  header p { margin: 0; color: #ccc; font-size: 14px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 40px 80px; }
+  h2 { color: var(--black); border-bottom: 3px solid var(--red); padding-bottom: 6px; margin-top: 48px; font-size: 19px; }
+  h3 { color: var(--red); font-size: 15px; margin: 26px 0 8px; text-transform: uppercase; letter-spacing: .03em; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 12px 0; }
+  th { background: var(--black); color: #fff; text-align: left; padding: 8px 10px; }
+  td { border: 1px solid var(--border); padding: 8px 10px; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  code, pre { font-family: Consolas, "Courier New", monospace; }
+  code { background: var(--light); padding: 1px 5px; border-radius: 3px; font-size: 12.5px; }
+  pre { background: #121212; color: #e8e8e8; padding: 12px 14px; border-radius: 6px; overflow-x: auto; font-size: 12.5px; }
+  pre .c { color: #7a7a7a; }
+  .box { border: 1px solid var(--border); border-left: 5px solid var(--red); background: #fafafa; padding: 12px 16px; margin: 14px 0; font-size: 13.5px; }
+  .box.warn { border-left-color: var(--amber); background: #fffbea; }
+  .box.good { border-left-color: var(--green); background: #f0fff4; }
+  .pill { display: inline-block; border-radius: 10px; padding: 1px 9px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .pill.before { background: #ffe1e1; color: var(--red); }
+  .pill.after { background: #dcf3e4; color: var(--green); }
+  .pill.note { background: #fff3d6; color: var(--amber); }
+  .checkline { display: flex; gap: 10px; margin: 7px 0; align-items: flex-start; font-size: 14px; }
+  .checkline .boxit { border: 2px solid var(--black); width: 14px; height: 14px; flex: none; margin-top: 3px; }
+  .attack { border: 1px solid var(--border); border-top: 4px solid var(--red); border-radius: 6px; padding: 14px 18px; margin: 18px 0; page-break-inside: avoid; }
+  .attack h4 { margin: 0 0 4px; font-size: 15px; }
+  .attack .meta { font-size: 13px; color: var(--gray); margin-bottom: 8px; }
+  .kv { display: grid; grid-template-columns: 150px 1fr; gap: 4px 10px; font-size: 13px; margin-top: 8px; }
+  .kv b { color: var(--black); }
+  ul.tight { margin: 6px 0; padding-left: 20px; }
+  ul.tight li { margin: 4px 0; font-size: 14px; }
+  footer { border-top: 1px solid var(--border); padding: 18px 40px; color: var(--gray); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>POC Banking Attack Guide</h1>
+  <p>PGC Bank × Cloudflare API Shield &amp; WAF — pre-demo checklist, live demo runbook, and per-attack reference.
+     Target: <b>banking.puregroundscoffee.com</b> · All steps verified end-to-end against production.</p>
+</header>
+
+<main>
+
+<h2>What this demo proves</h2>
+<p>The PGC Bank demo app ships nine intentionally vulnerable endpoints mapped to the OWASP API Security
+Top 10. In the <b>"before"</b> state every attack succeeds against the live application. You then turn on
+Cloudflare controls (API Shield schema validation + fallthrough rule, WAF custom and rate-limiting rules,
+managed rules, content scanning) and re-run the <b>identical</b> attacks: every one is blocked at the
+Cloudflare edge — no application code changes. The audit trail is seeable in Security Events, and API
+Discovery surfaces the shadow endpoint the customer didn't know they had.</p>
+
+<div class="box good">
+<b>Verification status (measured, not planned):</b><br>
+• <code>test-api.sh</code> — 39/39 PASS against production<br>
+• <code>attack-simulation.sh before</code> — 11/11 VULNERABLE<br>
+• <code>attack-simulation.sh after</code> — 11/11 BLOCKED, 0 not-blocked<br>
+• Legitimate traffic re-tested while protections armed — all 200s (login, accounts, filtered transactions, notifications, profile)<br>
+• Arm → disarm cycle leaves the zone in a clean pre-staged state (verified by spot re-checks)
+</div>
+
+<h2>Part 1 — Pre-demo checklist (run the day before, ~20 minutes)</h2>
+
+<h3>1a. Machine &amp; network</h3>
+<div class="checkline"><div class="boxit"></div><div>Run everything from a terminal on the demo machine with the repo checked out at <code>banking\</code>. Scripts use <code>curl.exe --ssl-no-revoke</code> already — nothing to set.</div></div>
+<div class="checkline"><div class="boxit"></div><div><b>EICAR caveat:</b> this machine's network runs a Cloudflare Gateway policy that blocks the EICAR upload <i>client-side</i> (302 to a block page) before it reaches the zone. Show the content-scanning leg from a network/device without that policy, or accept skipping it. (The zone-side content-scanning block rule is already staged and works when traffic clears the client.)</div></div>
+<div class="checkline"><div class="boxit"></div><div><code>CLOUDFLARE_API_TOKEN</code> is set (used by <code>scripts/demo-edge-config.py</code>).</div></div>
+
+<h3>1b. Confirm the zone is staged</h3>
+<pre>python scripts/demo-edge-config.py status</pre>
+<p>Expect: schema validation = <code>log</code>, and six rules listed <code>[off]</code>:</p>
+<ul class="tight">
+  <li>Fallthrough block (ops outside the OpenAPI schema)</li>
+  <li>Block unauthenticated <code>/api/internal/debug</code></li>
+  <li>Block malicious uploads (content scanning)</li>
+  <li>Block any query string on <code>/api/profile</code></li>
+  <li>Rate limits: <code>/api/users/*/balance</code> · <code>/api/transfers/express</code> · loan/investment POSTs</li>
+</ul>
+<div class="box"><b>If anything is missing:</b> run <code>python scripts/demo-edge-config.py sync</code> (re-uploads schema + endpoint list) then <code>... disarm</code>. Never hand-edit other zone rules; the tool only ever touches rules prefixed <code>PGC demo:</code>.</div>
+
+<h3>1c. Rehearse both acts end-to-end</h3>
+<pre>./test-api.sh                  <span class="c"># expect: 39 passed, 0 failed</span>
+./attack-simulation.sh before  <span class="c"># expect: every line VULNERABLE</span></pre>
+<p>Then re-stage: nothing to undo — the before run leaves demo props (a pending/approved $3000 loan, small
+transfer noise) that reconcile with balances by design.</p>
+
+<h3>1d. Have these open in browser tabs</h3>
+<ul class="tight">
+  <li>Cloudflare dashboard → zone <b>puregroundscoffee.com</b> → <b>Security → Events</b> (you'll filter last-15-minutes live)</li>
+  <li><b>Security → API Shield</b> → Web Assets / Discovery (to reveal the shadow API)</li>
+  <li>The app UI logged in as <b>admin</b> (shows the legitimate experience untouched during the demo)</li>
+  <li>The app UI logged in as <b>chris.brown</b> (the attacker's ordinary customer session — use private window)</li>
+</ul>
+
+<h2>Part 2 — Live demo runbook (~25 minutes)</h2>
+
+<h3>Act 0 — Frame and prove the app is real (2 min)</h3>
+<ul class="tight">
+  <li>Show the homepage and the dashboard UI briefly: a real bank, real balances, real ledger.</li>
+  <li>Run <code>./test-api.sh</code> → 39 green checks. Say: <i>"Every piece of the UI maps to a public REST API. That's exactly the surface we're about to attack."</i></li>
+</ul>
+
+<h3>Act 1 — "Before": burn it down (10 min)</h3>
+<ul class="tight">
+  <li>Run <code>./attack-simulation.sh before</code>.</li>
+  <li>Narrate per line — the per-attack reference below has the exact talking point for each of the nine, in the order the script runs them.</li>
+  <li>Pause on two visible-damage beats: the <b>force-approved $3000 loan</b> (refresh chris.brown's dashboard — the money is there) and the <b>BOLA dump of every customer's balances</b>.</li>
+</ul>
+
+<h3>Act 2 — Arm the edge (1 min, live on camera)</h3>
+<pre>python scripts/demo-edge-config.py arm</pre>
+<p>One command flips schema validation to <code>block</code> and enables all six rules. Say: <i>"This is
+configuration on your Cloudflare zone — nothing was redeployed, nothing changed in the app's code."</i></p>
+
+<h3>Act 3 — "After": same attacks, different outcome (8 min)</h3>
+<ul class="tight">
+  <li>Run <code>./attack-simulation.sh after</code> → expect 11 BLOCKED.</li>
+  <li>Point out the block reasons printed per line (429 rate limit vs 403 schema/fallthrough) — the <i>mechanism</i> is the product story.</li>
+  <li>Switch to <b>Security → Events</b>, filter last 15 minutes: every blocked attempt is there, rule-named.</li>
+  <li>Switch to <b>API Shield → Discovery</b>: <code>GET /api/v1/accounts</code> appears as a discovered operation absent from the uploaded schema — the shadow API, found.</li>
+  <li>Optional manual beat: the EICAR upload (see §3, content-scanning row).</li>
+</ul>
+
+<h3>Act 4 — Wrap (3 min)</h3>
+<ul class="tight">
+  <li>Re-run <code>./test-api.sh</code> with protections still armed → still 39/39. <i>"Legitimate traffic is untouched; the positive security model only rejects what was never declared."</i></li>
+  <li>Forward-looking: BOLA ML labels and Volumetric Abuse Detection learn from weeks of production traffic — today's blocks are the deterministic layer; posture detections accrue over time.</li>
+  <li>Leave the zone staged again when done: <code>python scripts/demo-edge-config.py disarm</code>.</li>
+</ul>
+
+<h2>Part 3 — Per-attack reference</h2>
+<p>In script order. <span class="pill before">BEFORE</span> = expected result with the zone in its default
+state; <span class="pill after">AFTER</span> = expected result armed. Every "after" result below was
+observed live during verification.</p>
+
+<div class="attack">
+  <h4>Attack 1 · Broken Authentication — OWASP API2</h4>
+  <div class="meta">Endpoint: <code>GET /api/internal/debug</code></div>
+  <div class="kv">
+    <b>Execute</b><span><code>curl https://banking.puregroundscoffee.com/api/internal/debug</code> — no credentials at all.</span>
+    <b>What's attacked</b><span>An internal diagnostics endpoint that ships with no auth check; dumps the user table including password hashes and salts, plus auth config.</span>
+    <b>Feature showcased</b><span><b>WAF custom rule</b> blocking requests without a Bearer token to internal paths (the toggle-ready, deterministic version of API Shield JWT validation; the full JWT-validation variant needs the JWT secret pasted in the dashboard — optional extra, not required).</span>
+    <b>Before</b><span><span class="pill before">200 — full dump</span></span>
+    <b>After</b><span><span class="pill after">403 at the edge</span></span>
+    <b>Prep needed</b><span>None (rule is staged).</span>
+  </div>
+</div>
+
+<div class="attack">
+  <h4>Attack 2 · Shadow API / Improper Inventory — OWASP API9</h4>
+  <div class="meta">Endpoint: <code>GET /api/v1/accounts</code> (also accepts a <code>?userId=</code> override)</div>
+  <div class="kv">
+    <b>Execute</b><span><code>curl -H "Authorization: Bearer $TOKEN" $BASE/api/v1/accounts</code></span>
+    <b>What's attacked</b><span>A deprecated v1 endpoint that was never decommissioned: undocumented, missing from the OpenAPI schema, and serving verbose rows.</span>
+    <b>Feature showcased</b><span><b>API Discovery</b> (finds the shadow op in traffic) + <b>schema-validation fallthrough rule</b> — anything not in the uploaded schema is treated as hostile.</span>
+    <b>Before</b><span><span class="pill before">200 — verbose data served</span></span>
+    <b>After</b><span><span class="pill after">403 fallthrough block</span></span>
+    <b>Prep needed</b><span>Schema uploaded during staging (already done — <code>demo-edge-config.py sync</code>).</span>
+  </div>
+</div>
+
+<div class="attack">
+  <h4>Attack 3 · Broken Function Level Authorization — OWASP API5</h4>
+  <div class="meta">Endpoints: <code>GET /api/admin/users</code> · <code>POST /api/admin/loans/:id/force-approve</code></div>
+  <div class="kv">
+    <b>Execute</b><span>With an ordinary customer's token: list all users, then apply for a $3000 loan (goes to <code>pending_review</code>) and force-approve it — the script does this automatically and the money really lands.</span>
+    <b>What's attacked</b><span>Admin-only functions with no role check — any customer token works.</span>
+    <b>Feature showcased</b><span><b>Fallthrough rule</b> again (neither admin path exists in the schema). Optional upgrade: a JWT-validation rule on the token's <code>role</code> claim (tokens already carry it; edge rule needs the JWT secret configured in the dashboard).</span>
+    <b>Before</b><span><span class="pill before">200 — list leaked; $3000 loan approved &amp; disbursed</span></span>
+    <b>After</b><span><span class="pill after">403; the loan stays pending_review</span></span>
+    <b>Prep needed</b><span>None.</span>
+  </div>
+</div>
+
+<div class="attack">
+  <h4>Attack 4 · Broken Object Level Authorization (BOLA) — OWASP API1</h4>
+  <div class="meta">Endpoint: <code>GET /api/users/:userId/balance</code></div>
+  <div class="kv">
+    <b>Execute</b><span>Enumerates every user id (from the debug dump) and reads each victim's balances. When the dump is already blocked (after state), the script falls back to one known id so the enumeration attempt itself is still shown.</span>
+    <b>What's attacked</b><span>No ownership check: any authenticated user reads any user's balances just by guessing/collecting ids.</span>
+    <b>Feature showcased</b><span><b>Rate-limiting rule</b> on the path (enumeration is inherently high-rate per session) <i>plus</i> the fallthrough rule (the path isn't in the schema either) — mention both layers: rate limiting catches even *declared*-endpoint enumeration in a real deployment.</span>
+    <b>Before</b><span><span class="pill before">5 customer profiles harvested</span></span>
+    <b>After</b><span><span class="pill after">403/429 — enumeration dies</span></span>
+    <b>Prep needed</b><span>None. Forward-looking note: Cloudflare's ML BOLA labels accrue on production traffic (10k+ sessions) — not shown live, position as posture tooling.</span>
+  </div>
+</div>
+
+<div class="attack">
+  <h4>Attack 5 · Excessive Data Exposure — OWASP API3</h4>
+  <div class="meta">Endpoint: <code>GET /api/profile</code> and <code>GET /api/profile?internal=1</code></div>
+  <div class="kv">
+    <b>Execute</b><span>Fetch <code>/api/profile</code> (base response already leaks password hash + salt), then flip <code>?internal=1</code> for full-record mode.</span>
+    <b>What's attacked</b><span>An endpoint returning far more than the UI needs, with an undocumented debug parameter.</span>
+    <b>Feature showcased</b><span><b>WAF custom rule</b> rejecting any query string on <code>/api/profile</code> (the schema declares no parameters). Honest nuance to say out loud: the <i>base</i> response leak is an app-side fix — the edge cannot redact response bodies; it blocks the undocumented access path.</span>
+    <b>Before</b><span><span class="pill before">Both leak</span></span>
+    <b>After</b><span><span class="pill after">?internal=1 → 403; base leak shown as the fix-the-app talking point</span></span>
+    <b>Prep needed</b><span>None.</span>
+  </div>
+</div>
+
+<div class="attack">
+  <h4>Attack 6 · Unrestricted Resource Consumption — OWASP API4</h4>
+  <div class="meta">Endpoint: <code>POST /api/transfers/express</code></div>
+  <div class="kv">
+    <b>Execute</b><span>20 × $0.01 transfers, no pauses.</span>
+    <b>What's attacked</b><span>A transfer endpoint cloned from the real one minus every rate limit — a burst runs unthrottled.</span>
+    <b>Feature showcased</b><span><b>WAF rate-limiting rule</b> (429 after 10/min; also fallthrough-blocked since the path is undocumented). Contrast with the real transfer endpoint's in-app KV limiter: the edge rule is the same control, zero code.</span>
+    <b>Before</b><span><span class="pill before">20/20 completed</span></span>
+    <b>After</b><span><span class="pill after">403/429 — burst dies</span></span>
+    <b>Prep needed</b><span>None.</span>
+  </div>
+</div>
+
+<div class="attack">
+  <h4>Attack 7 · Sensitive Business Flows — OWASP API6</h4>
+  <div class="meta">Endpoint: <code>POST /api/loans/apply</code> (existing legitimate endpoint — no frequency cap)</div>
+  <div class="kv">
+    <b>Execute</b><span>8 rapid $2000 loan applications (all stay <code>pending_review</code>; nothing disburses).</span>
+    <b>What's attacked</b><span>Application spam: nothing limits how many applications one customer can file per day.</span>
+    <b>Feature showcased</b><span><b>Rate-limiting rule</b> on loans/investments POSTs (5/min). Forward-looking pair: <b>Volumetric Abuse Detection</b> recommends per-endpoint, per-session limits from learned baselines in production.</span>
+    <b>Before</b><span><span class="pill before">8/8 filed in seconds</span></span>
+    <b>After</b><span><span class="pill after">429 past the fifth request</span></span>
+    <b>Prep needed</b><span>None.</span>
+  </div>
+</div>
+
+<div class="attack">
+  <h4>Attack 8 · Server-Side Request Forgery (SSRF) — OWASP API7</h4>
+  <div class="meta">Endpoint: <code>POST /api/profile/avatar-from-url</code></div>
+  <div class="kv">
+    <b>Execute</b><span><code>{"url":"https://example.com/"}</code> — the Worker fetches server-side and returns the body. Then mention/<code>{"url":"http://169.254.169.254/latest/meta-data"}</code> (cloud metadata; same kill at the edge).</span>
+    <b>What's attacked</b><span>Any attacker-chosen URL is fetched by the server with no validation.</span>
+    <b>Feature showcased</b><span><b>Fallthrough rule</b> (the path is outside the documented API) — and for a documented variant, schema URL-allowlisting. Say plainly: the definitive SSRF fix is origin-side allowlisting; the edge compresses the attack surface to only-declared operations.</span>
+    <b>Before</b><span><span class="pill before">200 — external body exfiltrated through the Worker</span></span>
+    <b>After</b><span><span class="pill after">403</span></span>
+    <b>Prep needed</b><span>None. (Workers cannot actually reach link-local IPs — use example.com for the visible exfil proof.)</span>
+  </div>
+</div>
+
+<div class="attack">
+  <h4>Attack 9 · Security Misconfiguration — OWASP API8</h4>
+  <div class="meta">Endpoint: <code>POST /api/debug/parse</code></div>
+  <div class="kv">
+    <b>Execute</b><span>Send malformed JSON → the app 500s with a JS stack trace including server-side file paths and internals.</span>
+    <b>What's attacked</b><span>Unsanitized error responses leaking implementation detail that guides further attacks.</span>
+    <b>Feature showcased</b><span><b>Schema strict typing + fallthrough:</b> malformed bodies never reach the Worker, and this path isn't documented anyway → clean edge rejection, no error surface to mine.</span>
+    <b>Before</b><span><span class="pill before">500 with stack trace</span></span>
+    <b>After</b><span><span class="pill after">403/400 at the edge</span></span>
+    <b>Prep needed</b><span>None.</span>
+  </div>
+</div>
+
+<h3>Companion surfaces (not OWASP-numbered)</h3>
+<table>
+  <tr><th>Surface</th><th>Attack</th><th>Feature</th><th>Expected</th></tr>
+  <tr><td><code>GET /api/transactions?sort=amount;DROP TABLE users--</code></td><td>SQLi-shaped query</td><td><b>WAF managed rules</b></td><td>403 at the edge in <i>both</i> runs (field-proven since early testing; the app also whitelists sort keys as a second layer)</td></tr>
+  <tr><td><code>POST /api/uploads</code> with the EICAR test file</td><td>Malware upload</td><td><b>Malicious uploads content scanning</b> (field: <code>cf.waf.content_scan.has_malicious_obj</code>)</td><td>403 once armed — <b>but</b> run from a network not covered by your own Gateway policy, or the client's network blocks it before Cloudflare ever sees it</td></tr>
+  <tr><td><code>POST /api/transfers/batch</code> with a &gt;100 MB body</td><td>Oversized payload</td><td><b>Plan-tier request body limit</b></td><td>413 automatically (Enterprise zones: 500 MB threshold)</td></tr>
+</table>
+
+<h2>Part 4 — Zone state &amp; recovery</h2>
+<table>
+  <tr><th>Command</th><th>Purpose</th></tr>
+  <tr><td><code>python scripts/demo-edge-config.py status</code></td><td>Show staged rules + schema validation action</td></tr>
+  <tr><td><code>python scripts/demo-edge-config.py sync</code></td><td>Re-upload schema + refresh Endpoint Management (idempotent)</td></tr>
+  <tr><td><code>python scripts/demo-edge-config.py arm</code></td><td>Demo "after" state (blocks on)</td></tr>
+  <tr><td><code>python scripts/demo-edge-config.py disarm</code></td><td>Demo "before" / staging state (rules staged but off, schema in log mode) — <b>this is the correct end state after any rehearsal or meeting</b></td></tr>
+</table>
+<div class="box warn">
+<b>If the room goes sideways:</b> app still behaving oddly during a demo? <code>disarm</code> restores the
+known-good baseline in seconds. If a demo rule ever blocks legitimate traffic, <code>status</code> tells
+you exactly which of the six is live.
+</div>
+<div class="box">
+<b>Optional upgrade, not required:</b> native API Shield JWT validation (signature verification at the
+edge, <code>role</code>-claim enforcement) needs a Token Configuration with the app's JWT secret. That's
+a paste-the-secret manual step in the dashboard — the JWT already carries <code>sub</code>/<code>username</code>/<code>role</code>.
+</div>
+
+</main>
+
+<footer>
+  PGC Bank · Cloudflare security POC · Guide regenerated after live end-to-end verification (both scripts,
+  arm/disarm cycle, and legitimate-traffic-while-armed checks all run against production).
+  Repo: github.com/davidrecla/banking — see BUILD-PLAN.md for the full reference spec.
+</footer>
+</body>
+</html>
