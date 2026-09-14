@@ -1,6 +1,7 @@
 import { jsonResponse, errorResponse } from '../lib/auth.js';
 import { getDailyTransferTotal, addDailyTransferTotal } from '../lib/ratelimit.js';
 import { loadDebitableAccount } from '../lib/accounts.js';
+import { recordAudit, recordAndNotify, notify } from '../lib/activity.js';
 
 const MAX_PER_TRANSACTION = 500;
 const MAX_PER_DAY = 1000;
@@ -71,6 +72,22 @@ export async function handleInternalTransfer(request, env, auth) {
 
   await addDailyTransferTotal(env, auth.sub, amount);
 
+  await recordAudit(
+    env,
+    request,
+    auth.sub,
+    'transfer_internal',
+    `Sent $${amount.toFixed(2)} to ${toUser.username} (${toAccount.account_type})`
+  );
+  // The recipient is a different user, so they get the notification, not the sender.
+  await notify(
+    env,
+    toUser.id,
+    'transaction',
+    'Money received',
+    `${auth.username} sent you $${amount.toFixed(2)} to your ${toAccount.account_type} account.`
+  );
+
   return jsonResponse({
     message: 'Transfer completed',
     from: { accountId: fromAccount.id, newBalance: fromAccount.balance - amount },
@@ -136,6 +153,19 @@ export async function handleExternalTransfer(request, env, auth) {
       .prepare('INSERT INTO transfers (id, user_id, from_account_id, to_account_id, external_bank, external_account_number, external_account_name, amount, fee, note, reference_number, batch_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(transferId, auth.sub, account.id, null, bank.name, accountNumber, accountName, amount, EXTERNAL_FEE, note || null, referenceNumber, null, 'completed', now)
   ]);
+
+  await recordAndNotify(
+    env,
+    request,
+    auth.sub,
+    'transfer_external',
+    `Sent $${amount.toFixed(2)} to ${accountName} at ${bank.name} (ref ${referenceNumber})`,
+    {
+      type: 'transaction',
+      title: 'External transfer sent',
+      message: `$${amount.toFixed(2)} sent to ${accountName} at ${bank.name}. Reference ${referenceNumber}.`
+    }
+  );
 
   return jsonResponse({
     message: 'External transfer submitted',
@@ -244,6 +274,19 @@ export async function handleBatchTransfer(request, env, auth) {
   }
 
   await env.BANK_DB.batch(statements);
+
+  await recordAndNotify(
+    env,
+    request,
+    auth.sub,
+    'transfer_batch',
+    `Submitted a batch of ${results.length} external transfers totalling $${totalDebit.toFixed(2)}`,
+    {
+      type: 'transaction',
+      title: 'Batch transfer sent',
+      message: `${results.length} transfers totalling $${totalDebit.toFixed(2)} (including fees) were sent.`
+    }
+  );
 
   return jsonResponse({
     message: `Batch of ${results.length} transfers submitted`,

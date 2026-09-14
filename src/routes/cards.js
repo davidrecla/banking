@@ -1,4 +1,5 @@
 import { jsonResponse, errorResponse } from '../lib/auth.js';
+import { recordAndNotify } from '../lib/activity.js';
 
 /**
  * GET /api/cards — the caller's cards.
@@ -28,15 +29,15 @@ export async function handleGetCards(request, env, auth) {
 
 /** POST /api/cards/:id/block */
 export async function handleBlockCard(request, env, auth, cardId) {
-  return setCardStatus(env, auth, cardId, 'blocked');
+  return setCardStatus(request, env, auth, cardId, 'blocked');
 }
 
 /** POST /api/cards/:id/unblock */
 export async function handleUnblockCard(request, env, auth, cardId) {
-  return setCardStatus(env, auth, cardId, 'active');
+  return setCardStatus(request, env, auth, cardId, 'active');
 }
 
-async function setCardStatus(env, auth, cardId, status) {
+async function setCardStatus(request, env, auth, cardId, status) {
   const card = await env.BANK_DB
     .prepare('SELECT * FROM cards WHERE id = ? AND user_id = ?')
     .bind(cardId, auth.sub)
@@ -56,8 +57,22 @@ async function setCardStatus(env, auth, cardId, status) {
     .bind(status, status === 'blocked' ? now : null, cardId)
     .run();
 
+  const blocked = status === 'blocked';
+  await recordAndNotify(
+    env,
+    request,
+    auth.sub,
+    blocked ? 'card_block' : 'card_unblock',
+    `${blocked ? 'Blocked' : 'Unblocked'} ${card.card_type} card ${card.card_number_masked}`,
+    {
+      type: 'security',
+      title: blocked ? 'Card blocked' : 'Card unblocked',
+      message: `Your ${card.card_type} card ending ${card.card_number_masked.slice(-4)} is now ${blocked ? 'blocked' : 'active'}.`
+    }
+  );
+
   return jsonResponse({
-    message: status === 'blocked' ? 'Card blocked' : 'Card unblocked',
-    card: { id: cardId, status, blockedAt: status === 'blocked' ? now : null }
+    message: blocked ? 'Card blocked' : 'Card unblocked',
+    card: { id: cardId, status, blockedAt: blocked ? now : null }
   });
 }

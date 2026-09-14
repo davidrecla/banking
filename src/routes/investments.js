@@ -1,5 +1,6 @@
 import { jsonResponse, errorResponse } from '../lib/auth.js';
 import { loadDebitableAccount } from '../lib/accounts.js';
+import { recordAudit, recordAndNotify } from '../lib/activity.js';
 
 const MIN_AMOUNT = 100;
 const MAX_AMOUNT = 5000;
@@ -113,6 +114,19 @@ export async function handleCreateInvestment(request, env, auth) {
       .bind(investmentId, auth.sub, account.id, planType, amount, durationMonths, plan.annualRate, projectedReturn, maturity.toISOString(), 'active', nowIso)
   ]);
 
+  await recordAndNotify(
+    env,
+    request,
+    auth.sub,
+    'investment_purchase',
+    `Invested $${amount.toFixed(2)} in ${plan.name} for ${durationMonths} months at ${plan.annualRate}%`,
+    {
+      type: 'account',
+      title: 'Investment created',
+      message: `$${amount.toFixed(2)} invested in ${plan.name}. Projected value $${projectedReturn.toFixed(2)} at maturity.`
+    }
+  );
+
   return jsonResponse({
     message: 'Investment created',
     investment: {
@@ -184,6 +198,14 @@ export async function handleWithdrawInvestment(request, env, auth, investmentId)
       .prepare('INSERT INTO transactions (id, account_id, type, amount, merchant, category, status, description, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(crypto.randomUUID(), investment.from_account_id, 'deposit', payout, 'PGC Investment Withdrawal', 'investment', 'completed', matured ? 'Matured investment payout' : 'Early withdrawal (principal only)', nowIso)
   ]);
+
+  await recordAudit(
+    env,
+    request,
+    auth.sub,
+    'investment_withdraw',
+    `Withdrew ${matured ? 'matured' : 'early (principal only)'} investment, payout $${payout.toFixed(2)}`
+  );
 
   return jsonResponse({
     message: matured ? 'Investment withdrawn at maturity' : 'Early withdrawal: principal returned, projected gains forfeited',

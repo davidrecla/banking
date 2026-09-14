@@ -15,6 +15,7 @@
       <a href="/statements" style="margin-right:16px;">Statements</a>
       <a href="/cards" style="margin-right:16px;">Cards</a>
       <a href="/uploads" style="margin-right:16px;">Documents</a>
+      <a href="/profile" style="margin-right:16px;">Profile<span class="unread-badge" id="nav-unread" style="display:none;">0</span></a>
       <button class="btn-danger" id="logout-btn">Logout</button>
     </div>
   </div>
@@ -164,8 +165,19 @@
     }
   });
 
+  async function loadUnreadCount() {
+    const res = await authFetch('/api/notifications?unreadOnly=true&limit=1');
+    const data = await res.json();
+    const badge = document.getElementById('nav-unread');
+    if (data.unreadCount > 0) {
+      badge.textContent = data.unreadCount;
+      badge.style.display = 'inline-block';
+    }
+  }
+
   loadAccounts();
   loadRecentTransactions();
+  loadUnreadCount();
 </script>
 </body>
 </html>
