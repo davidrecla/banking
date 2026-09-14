@@ -393,20 +393,55 @@ The homepage is modeled loosely on Metrobank's homepage (https://www.metrobank.c
 
 ## Intentional Vulnerabilities (Phase 4, NOT yet implemented) — mapped to OWASP API Security Top 10
 
-| OWASP API # | Category | Endpoint (planned) | Vulnerability |
-|---|---|---|---|
-| API1 | Broken Object Level Authorization (BOLA) | `GET /api/admin/users/:userId/balance` | Any authenticated user can view another user's balance |
-| API2 | Broken Authentication | `GET /api/internal/debug` | No authentication required; exposes user list, SSNs, internal config |
-| API3 | Excessive Data Exposure | `GET /api/profile` | Returns full internal record (SSN, password hash field, internal flags) instead of just UI-needed fields |
-| API4 | Unrestricted Resource Consumption | `POST /api/transfers/express` | No rate limiting applied |
-| API5 | Broken Function Level Authorization (BFLA) | `GET /api/admin/users`, `POST /api/admin/loans/:id/force-approve` | No role check — regular users can call admin-only functions |
-| API6 | Unrestricted Access to Sensitive Business Flows | Loan/investment endpoints | No cap on number of applications/investments per day |
-| API7 | Server-Side Request Forgery (SSRF) | `POST /api/profile/avatar-from-url` (or bank-account verification) | Worker fetches a user-supplied URL server-side with no validation |
-| API8 | Security Misconfiguration | Various | Verbose error messages leak stack traces / internal DB errors on malformed input |
-| API9 | Improper Inventory Management | `GET /api/v1/accounts` | Deprecated, undocumented shadow endpoint still live, absent from OpenAPI schema — for API Discovery demo |
-| API10 | Unsafe Consumption of 3rd-Party APIs | External transfer flow | Blindly trusts mock external bank's response without validation |
+API10 (Unsafe Consumption of 3rd-Party APIs) was considered and **dropped** during
+design: blindly-trusting the mock external bank's response is an origin-side logic
+flaw with no edge-side Cloudflare mitigation, so it produced no "after" block to
+demo. The nine vulnerabilities below were each designed so the attack input is
+visible at the edge (request shape, JWT claims, rate, or path inventory), giving
+every one a **deterministic, on-camera Cloudflare block** in the "after" run.
 
-**Do not implement these until Phase 4**, and only on separate, clearly-named endpoints — keep them isolated from the legitimate API surface so the "before/after API Shield" story stays clean for the demo.
+| OWASP API # | Category | Endpoint (planned) | Vulnerability | Exploit (for `attack-simulation.sh`) | Cloudflare block in the "after" run |
+|---|---|---|---|---|---|
+| API1 | Broken Object Level Authorization (BOLA) | `GET /api/users/:userId/balance` | Any authenticated user can view another user's balance (no ownership check) | Log in as `chris.brown`, loop `userId` across all 5 users, dump balances | **WAF rate limiting rule** on `/api/users/*/balance` — enumeration is inherently high-rate from one session, so it 429s deterministically. Show Sequence Analytics tracing the enumeration alongside; do NOT promise the ML `cf-risk-bola-enumeration` label live (needs 10,000+ sessions) |
+| API2 | Broken Authentication | `GET /api/internal/debug` | No authentication required; exposes user list, password hashes, internal config | Plain `curl`, no token → full data | **JWT validation rule** with `is_jwt_present()` → Block on `/api/internal/*`. Phase 5 adds **mTLS** on the same path for contrast |
+| API3 | Excessive Data Exposure | `GET /api/profile` | Base response already leaks `password_hash`/`salt`/internal flags; an `?internal=1`-style query param flips it into full-record mode | (a) diff the base response vs. UI fields; (b) probe `GET /api/profile?internal=1` | **Schema validation** declares `/profile` with no query params → the probe is a schema violation → Block. The leaky base response stays as the "fix the app" talking point — the edge cannot redact response bodies |
+| API4 | Unrestricted Resource Consumption | `POST /api/transfers/express` | No rate limiting applied (unlike legit `/api/transfers/internal`, which uses the KV limiter) | 50 transfer POSTs in ~2s, all succeed | **WAF rate limiting rule** on the path — exactly the edge equivalent of the KV limiter this endpoint skips |
+| API5 | Broken Function Level Authorization (BFLA) | `GET /api/admin/users`, `POST /api/admin/loans/:id/force-approve` | No role check — regular users can call admin-only functions | Regular user's token calls both admin endpoints → 200s | Two layered blocks shown back-to-back: (1) **schema fallthrough rule** — `/api/admin/*` ops aren't in the uploaded OpenAPI schema → blocked as unknown operations; (2) **JWT validation custom rule** on `http.request.jwt.claims.role != "admin"` → Block. Requires the `role`-claim JWT change below |
+| API6 | Unrestricted Access to Sensitive Business Flows | `POST /api/loans/apply` / `POST /api/investments` | No cap on applications per day per user | 100 loan applications from one user in a minute | Manual **rate limiting rule** on loans/investments POSTs (deterministic). Mention **Volumetric Abuse Detection** as the ML version, with its 50-sessions/24h warmup caveat — do not rely on it live |
+| API7 | Server-Side Request Forgery (SSRF) | `POST /api/profile/avatar-from-url` | Worker fetches a user-supplied URL server-side with no validation | Body `"url": "http://169.254.169.254/latest/meta-data"` → Worker fetches and returns the body | **Schema validation with an allowlist pattern on the URL field** (`^https://cdn\.puregroundscoffee\.com/…`) → the metadata URL is a schema violation → Block before the Worker ever fetches. Backup: custom rule matching private-IP strings in the request body. Residual-risk note stays in the pitch: the definitive SSRF fix is origin-side allowlisting |
+| API8 | Security Misconfiguration | any JSON endpoint with malformed body (`/api/auth/login` as the demo target) | Verbose 500 leaks stack traces / raw D1 error text on type-confused input | POST type-confused JSON (array/object mismatch) → 500 with stack trace | Same malformed body on the "after" run: **schema validation strict typing** rejects it with a clean 400 at the edge — the error surface never exists because garbage never reaches the Worker |
+| API9 | Improper Inventory Management | `GET /api/v1/accounts` | Deprecated, undocumented shadow endpoint still live, absent from the OpenAPI schema | Straight `curl` works silently | **API Discovery** (ML + session-identifier-based) surfaces `/api/v1/accounts` as an unmanaged candidate operation → **fallthrough rule** then blocks everything not in the uploaded schema. Flagship demo |
+
+### JWT `role` claim — one auth change that unlocks two demos
+
+`src/routes/auth.js` must add a `role` claim to the JWT payload at login (the
+`users.role` column already exists). This is what makes API5's JWT-claims custom
+rule (and API1's layered defense story) evaluable at the edge. It also makes the
+JWT a suitable session-identifier source for API Shield (`sub` claim).
+
+### Deterministic blocks vs. ML detections — demo honestly
+
+Two Cloudflare features have traffic floors a live demo cannot meet: BOLA
+enumeration risk labels (10,000+ sessions) and Volumetric Abuse Detection rate
+recommendations (50+ distinct sessions in 24h). The scriptable, deterministic
+blockers above — schema validation + fallthrough rule, JWT validation rules,
+rate limiting rules, managed WAF rules, mTLS — are the live-demo backbone;
+position the ML features as "what production sees over weeks."
+
+### Entitlements to verify on the account before demo day
+
+- **API Shield subscription active at both account and zone level** — API
+  Discovery does not run otherwise (`puregroundscoffee.com` zone).
+- **WAF malicious uploads detection is an Enterprise add-on** — needed for the
+  EICAR content-scanning demo. If the zone lacks it, that surface is cut.
+- **Zone plan tier sets the request body limit** (Free/Pro 100 MB, Business
+  200 MB, Enterprise 500 MB) — determines the oversized-batch demo's 413.
+
+**Do not implement these until Phase 4**, and only on separate, clearly-named
+endpoints — keep them isolated from the legitimate API surface so the
+"before/after API Shield" story stays clean for the demo. Per Phase 3 note 5:
+no real card PANs persist anywhere — if an exploit step needs card-shaped data,
+generate obviously-fake numbers on the fly.
 
 ### Cloudflare WAF already blocks some attacks before they reach the Worker
 
@@ -498,7 +533,8 @@ Delivered as three PRs: #14 statements + schema + lockfile, #15 cards + enforced
 7. **A lockfile is now committed.** `package-lock.json` is tracked, so CI installs a pinned graph and the deployed artifact is reproducible. `npm audit` reports 0 vulnerabilities.
 
 ### Phase 4 — Security Showcase Layer (START HERE NEXT)
-- [ ] Implement all 10 intentional vulnerabilities from the OWASP mapping table above, on clearly separate/isolated endpoints
+- [ ] Implement the 9 intentional vulnerabilities from the OWASP mapping table above, on clearly separate/isolated endpoints (API10 was dropped during design — see the table header)
+- [ ] Add the `role` claim to JWTs at login (unlocks the API5 and API1 layered blocks)
 - [ ] Verify WAF/content-scanning test surfaces work as intended
 - [ ] Write `openapi-schema.yaml` (OpenAPI 3.0) covering all **legitimate** endpoints only — deliberately exclude the shadow `/api/v1` endpoint so it shows up as a "shadow API" in API Discovery
 - [ ] `test-api.sh` — happy-path validation script for all real endpoints
