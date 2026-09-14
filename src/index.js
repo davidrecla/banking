@@ -6,6 +6,7 @@ import { handleGetTransactions, handleGetTransaction } from './routes/transactio
 import { handleGetPayees, handleCreatePayee, handleDeletePayee, handlePayBill, handleGetBills } from './routes/bills.js';
 import { handleApplyForLoan, handleGetLoans, handleGetLoan } from './routes/loans.js';
 import { handleGetPlans, handleCreateInvestment, handleGetInvestments, handleWithdrawInvestment } from './routes/investments.js';
+import { handleGenerateStatement, handleGetStatements, handleDownloadStatement } from './routes/statements.js';
 import { handleUploadFile, handleListUploads, handleDownloadUpload, handleDeleteUpload } from './routes/uploads.js';
 
 const CORS_HEADERS = {
@@ -81,6 +82,12 @@ export default {
 
       const withdrawMatch = pathname.match(/^\/api\/investments\/([^/]+)\/withdraw$/);
       if (withdrawMatch && method === 'POST') return await handleWithdrawInvestment(request, env, auth, withdrawMatch[1]);
+
+      if (pathname === '/api/statements/generate' && method === 'POST') return await handleGenerateStatement(request, env, auth);
+      if (pathname === '/api/statements' && method === 'GET') return await handleGetStatements(request, env, auth);
+
+      const statementDownloadMatch = pathname.match(/^\/api\/statements\/([^/]+)\/download$/);
+      if (statementDownloadMatch && method === 'GET') return await handleDownloadStatement(request, env, auth, statementDownloadMatch[1]);
 
       if (pathname === '/api/uploads' && method === 'POST') return await handleUploadFile(request, env, auth);
       if (pathname === '/api/uploads' && method === 'GET') return await handleListUploads(request, env, auth);
