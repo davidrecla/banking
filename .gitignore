@@ -159,3 +159,4 @@ scripts/activity-seed.ps1
 scripts/r2-cleanup.ps1
 scripts/accounts.json
 scripts/users.json
+__pycache__/
