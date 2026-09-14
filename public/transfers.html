@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - External Transfers</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="top-nav">
+    <div><strong>PGC <span class="brand-mark">BANK</span></strong> &mdash; External Transfers</div>
+    <div>
+      <a href="/dashboard" style="margin-right:16px;">Dashboard</a>
+      <a href="/transactions" style="margin-right:16px;">Transactions</a>
+      <button class="btn-danger" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>Send to Another Bank</h3>
+    <form id="ext-form">
+      <div class="filter-grid">
+        <div>
+          <label for="e-account">From Account</label>
+          <select id="e-account" required></select>
+        </div>
+        <div>
+          <label for="e-bank">Destination Bank</label>
+          <select id="e-bank" required></select>
+        </div>
+        <div>
+          <label for="e-acctname">Recipient Name</label>
+          <input id="e-acctname" placeholder="e.g. Jordan Lee" required />
+        </div>
+        <div>
+          <label for="e-acctnum">Recipient Account Number</label>
+          <input id="e-acctnum" placeholder="e.g. 4410052281" required />
+        </div>
+        <div>
+          <label for="e-amount">Amount (max $1,000)</label>
+          <input id="e-amount" type="number" min="0.01" max="1000" step="0.01" required />
+        </div>
+        <div>
+          <label for="e-note">Note (optional)</label>
+          <input id="e-note" placeholder="e.g. Rent share" />
+        </div>
+      </div>
+
+      <div class="calc-panel">
+        <div class="calc-item">
+          <span class="calc-label">Transfer Amount</span>
+          <span class="calc-value" id="e-calc-amount">&mdash;</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Fee</span>
+          <span class="calc-value" id="e-calc-fee">&mdash;</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Total Debited</span>
+          <span class="calc-value amount-debit" id="e-calc-total">&mdash;</span>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary">Send Transfer</button>
+      <div id="ext-error" class="error-text"></div>
+    </form>
+  </div>
+
+  <div class="section-card">
+    <h3>Batch Transfer</h3>
+    <p style="font-size:13px;color:var(--dbs-gray);margin-top:0;">
+      Send up to 10 external transfers from one account. The batch is validated as a whole &mdash;
+      if any row is invalid or the total exceeds your balance, nothing is sent.
+    </p>
+    <form id="batch-form">
+      <label for="b-account">From Account</label>
+      <select id="b-account" required></select>
+
+      <div id="batch-rows"></div>
+
+      <div class="filter-actions">
+        <button type="button" class="btn-secondary" id="add-row-btn">Add Row</button>
+        <button type="submit" class="btn-primary btn-inline">Submit Batch</button>
+      </div>
+
+      <div class="calc-panel">
+        <div class="calc-item">
+          <span class="calc-label">Rows</span>
+          <span class="calc-value" id="b-calc-rows">0</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Total Amount</span>
+          <span class="calc-value" id="b-calc-amount">&mdash;</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Total Fees</span>
+          <span class="calc-value" id="b-calc-fees">&mdash;</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Total Debited</span>
+          <span class="calc-value amount-debit" id="b-calc-total">&mdash;</span>
+        </div>
+      </div>
+
+      <div id="batch-error" class="error-text"></div>
+    </form>
+  </div>
+
+  <div class="section-card">
+    <h3>Transfer History</h3>
+    <div id="transfer-list">Loading...</div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  const MAX_ROWS = 10;
+  let banksCache = [];
+  let fee = 2.5;
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  function bankOptions() {
+    return banksCache.map((b) => `<option value="${b.code}">${escapeHtml(b.name)}</option>`).join('');
+  }
+
+  async function loadBanks() {
+    const res = await authFetch('/api/transfers/banks');
+    const data = await res.json();
+    banksCache = data.banks;
+    fee = data.fee;
+    document.getElementById('e-bank').innerHTML = bankOptions();
+    addBatchRow();
+  }
+
+  async function loadAccounts() {
+    const res = await authFetch('/api/accounts');
+    const data = await res.json();
+    const options = data.accounts
+      .map((a) => `<option value="${a.id}">${a.account_type} (${formatCurrency(a.balance)})</option>`)
+      .join('');
+    document.getElementById('e-account').innerHTML = options;
+    document.getElementById('b-account').innerHTML = options;
+  }
+
+  function updateSingleCalc() {
+    const amount = parseFloat(document.getElementById('e-amount').value);
+    if (!amount || amount <= 0) {
+      ['e-calc-amount', 'e-calc-fee', 'e-calc-total'].forEach((id) => {
+        document.getElementById(id).textContent = '\u2014';
+      });
+      return;
+    }
+    document.getElementById('e-calc-amount').textContent = formatCurrency(amount);
+    document.getElementById('e-calc-fee').textContent = formatCurrency(fee);
+    document.getElementById('e-calc-total').textContent = formatCurrency(amount + fee);
+  }
+
+  function addBatchRow() {
+    const container = document.getElementById('batch-rows');
+    if (container.children.length >= MAX_ROWS) {
+      showToast(`A batch may contain at most ${MAX_ROWS} transfers`, true);
+      return;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'batch-row';
+    row.innerHTML = `
+      <select class="b-bank">${bankOptions()}</select>
+      <input class="b-name" placeholder="Recipient name" />
+      <input class="b-num" placeholder="Account number" />
+      <input class="b-amt" type="number" min="0.01" max="1000" step="0.01" placeholder="Amount" />
+      <button type="button" class="btn-danger b-remove">&times;</button>
+    `;
+    container.appendChild(row);
+
+    row.querySelector('.b-amt').addEventListener('input', updateBatchCalc);
+    row.querySelector('.b-remove').addEventListener('click', () => {
+      row.remove();
+      updateBatchCalc();
+    });
+    updateBatchCalc();
+  }
+
+  function batchRowData() {
+    return Array.from(document.querySelectorAll('.batch-row')).map((row) => ({
+      bankCode: row.querySelector('.b-bank').value,
+      accountName: row.querySelector('.b-name').value.trim(),
+      accountNumber: row.querySelector('.b-num').value.trim(),
+      amount: parseFloat(row.querySelector('.b-amt').value)
+    }));
+  }
+
+  function updateBatchCalc() {
+    const rows = batchRowData();
+    const valid = rows.filter((r) => r.amount > 0);
+    const totalAmount = valid.reduce((sum, r) => sum + r.amount, 0);
+    const totalFees = fee * valid.length;
+
+    document.getElementById('b-calc-rows').textContent = rows.length;
+    if (!valid.length) {
+      ['b-calc-amount', 'b-calc-fees', 'b-calc-total'].forEach((id) => {
+        document.getElementById(id).textContent = '\u2014';
+      });
+      return;
+    }
+    document.getElementById('b-calc-amount').textContent = formatCurrency(totalAmount);
+    document.getElementById('b-calc-fees').textContent = formatCurrency(totalFees);
+    document.getElementById('b-calc-total').textContent = formatCurrency(totalAmount + totalFees);
+  }
+
+  async function loadTransfers() {
+    const res = await authFetch('/api/transfers');
+    const data = await res.json();
+    const listEl = document.getElementById('transfer-list');
+
+    if (!data.transfers.length) {
+      listEl.innerHTML = '<p style="color:var(--dbs-gray);">No external transfers yet.</p>';
+      return;
+    }
+
+    listEl.innerHTML = data.transfers.map((t) => `
+      <div class="file-row">
+        <div>
+          <strong>${escapeHtml(t.external_account_name)}</strong>
+          <span class="status-pill status-${t.status}" style="margin-left:8px;">${t.status}</span>
+          ${t.batch_id ? '<span class="status-pill status-pending" style="margin-left:6px;">batch</span>' : ''}
+          <div style="font-size:12px;color:var(--dbs-gray);">
+            ${escapeHtml(t.external_bank)} &middot; ${escapeHtml(t.external_account_number)} &middot;
+            ${escapeHtml(t.reference_number)} &middot; ${new Date(t.created_at).toLocaleDateString()}
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div class="amount-debit">-${formatCurrency(t.amount)}</div>
+          <div style="font-size:11px;color:var(--dbs-gray);">+${formatCurrency(t.fee)} fee</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('e-amount').addEventListener('input', updateSingleCalc);
+  document.getElementById('add-row-btn').addEventListener('click', addBatchRow);
+
+  document.getElementById('ext-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('ext-error');
+    errorEl.textContent = '';
+
+    const body = {
+      fromAccountId: document.getElementById('e-account').value,
+      bankCode: document.getElementById('e-bank').value,
+      accountName: document.getElementById('e-acctname').value.trim(),
+      accountNumber: document.getElementById('e-acctnum').value.trim(),
+      amount: parseFloat(document.getElementById('e-amount').value),
+      note: document.getElementById('e-note').value.trim() || undefined
+    };
+
+    try {
+      const res = await authFetch('/api/transfers/external', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Transfer failed';
+        return;
+      }
+      showToast(`Transfer sent. Reference ${data.transfer.referenceNumber}`);
+      document.getElementById('ext-form').reset();
+      updateSingleCalc();
+      loadAccounts();
+      loadTransfers();
+    } catch (err) {
+      errorEl.textContent = 'Network error. Please try again.';
+    }
+  });
+
+  document.getElementById('batch-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('batch-error');
+    errorEl.textContent = '';
+
+    const transfers = batchRowData();
+    if (!transfers.length) {
+      errorEl.textContent = 'Add at least one transfer row';
+      return;
+    }
+
+    const body = { fromAccountId: document.getElementById('b-account').value, transfers };
+
+    try {
+      const res = await authFetch('/api/transfers/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Batch failed';
+        return;
+      }
+      showToast(`${data.transfers.length} transfers sent (${formatCurrency(data.totalDebited)} debited)`);
+      document.getElementById('batch-rows').innerHTML = '';
+      addBatchRow();
+      loadAccounts();
+      loadTransfers();
+    } catch (err) {
+      errorEl.textContent = 'Network error. Please try again.';
+    }
+  });
+
+  loadBanks();
+  loadAccounts();
+  loadTransfers();
+</script>
+</body>
+</html>

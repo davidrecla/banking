@@ -259,6 +259,20 @@ th.sort-desc::after { content: " \2193"; color: var(--dbs-red); }
 .plan-desc { font-size: 13px; color: var(--dbs-gray); margin: 8px 0; }
 .plan-terms { font-size: 12px; color: var(--dbs-gray); border-top: 1px solid var(--dbs-border); padding-top: 10px; }
 
+/* ---- Batch transfer rows ---- */
+.batch-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 1fr 0.8fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+.batch-row .btn-danger { padding: 9px 13px; line-height: 1; }
+@media (max-width: 720px) {
+  .batch-row { grid-template-columns: 1fr 1fr; }
+  .batch-row .btn-danger { grid-column: span 2; }
+}
+
 .toast {
   position: fixed;
   bottom: 24px;

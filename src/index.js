@@ -1,7 +1,7 @@
 import { authenticate, errorResponse } from './lib/auth.js';
 import { handleLogin, handleRefresh, handleLogout } from './routes/auth.js';
 import { handleGetAccounts, handleGetAccount } from './routes/accounts.js';
-import { handleInternalTransfer } from './routes/transfers.js';
+import { handleInternalTransfer, handleExternalTransfer, handleBatchTransfer, handleGetExternalBanks, handleGetTransfers } from './routes/transfers.js';
 import { handleGetTransactions, handleGetTransaction } from './routes/transactions.js';
 import { handleGetPayees, handleCreatePayee, handleDeletePayee, handlePayBill, handleGetBills } from './routes/bills.js';
 import { handleApplyForLoan, handleGetLoans, handleGetLoan } from './routes/loans.js';
@@ -46,6 +46,10 @@ export default {
       if (accountMatch && method === 'GET') return await handleGetAccount(request, env, auth, accountMatch[1]);
 
       if (pathname === '/api/transfers/internal' && method === 'POST') return await handleInternalTransfer(request, env, auth);
+      if (pathname === '/api/transfers/external' && method === 'POST') return await handleExternalTransfer(request, env, auth);
+      if (pathname === '/api/transfers/batch' && method === 'POST') return await handleBatchTransfer(request, env, auth);
+      if (pathname === '/api/transfers/banks' && method === 'GET') return await handleGetExternalBanks(request, env, auth);
+      if (pathname === '/api/transfers' && method === 'GET') return await handleGetTransfers(request, env, auth);
 
       if (pathname === '/api/transactions' && method === 'GET') return await handleGetTransactions(request, env, auth);
 
