@@ -155,4 +155,7 @@ scripts/phase2-schema.ps1
 scripts/schema-*.ps1
 scripts/transactions-seed.ps1
 scripts/cards-seed.ps1
+scripts/activity-seed.ps1
+scripts/r2-cleanup.ps1
 scripts/accounts.json
+scripts/users.json
