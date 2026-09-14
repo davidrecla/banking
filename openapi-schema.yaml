@@ -1,0 +1,553 @@
+# PGC Bank API — OpenAPI 3.0 schema for Cloudflare API Shield schema validation.
+#
+# SCOPE IS DELIBERATE: this file describes ONLY the legitimate API surface
+# (Phases 1-3). The Phase 4 showcase endpoints — /api/v1/accounts, /api/internal/*,
+# /api/admin/*, /api/transfers/express, /api/users/*/balance, /api/debug/* and
+# /api/profile/avatar-from-url — are intentionally ABSENT so that:
+#   1. API Discovery surfaces /api/v1/accounts as a "shadow API" (API9 demo), and
+#   2. A schema-validation fallthrough rule treats every vulnerable endpoint as
+#      an unknown operation and blocks it (API5/API9 demo).
+# GET /api/profile is included WITHOUT query parameters so the undocumented
+# ?internal=1 mode becomes a schema violation (API3 demo).
+#
+# Cloudflare constraint: OAS v3.0 only (v3.1 is not supported by schema validation).
+openapi: 3.0.3
+info:
+  title: PGC Bank API
+  version: 1.0.0
+  description: Demo banking API for the PGC Bank Cloudflare security showcase.
+servers:
+  - url: https://banking.puregroundscoffee.com
+  - url: https://banking.davidrecla.workers.dev
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/auth/login:
+    post:
+      summary: Log in and receive a JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: Token issued }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { description: Invalid credentials }
+        '429': { description: Rate limited }
+
+  /api/auth/refresh:
+    post:
+      summary: Exchange a valid token for a fresh one
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200': { description: New token issued }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { description: Invalid or expired token }
+
+  /api/auth/logout:
+    post:
+      summary: Log out (stateless no-op)
+      security: []
+      responses:
+        '200': { description: Logged out }
+
+  /api/profile:
+    get:
+      summary: The caller's profile
+      description: No query parameters are part of the documented contract.
+      responses:
+        '200': { description: Profile }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/accounts:
+    get:
+      summary: List the caller's accounts
+      responses:
+        '200': { description: Accounts }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/accounts/{id}:
+    get:
+      summary: Single account detail
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Account }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/accounts/{id}/freeze:
+    post:
+      summary: Freeze an account (blocks debits)
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Frozen }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/accounts/{id}/unfreeze:
+    post:
+      summary: Unfreeze an account
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Unfrozen }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/cards:
+    get:
+      summary: List the caller's cards (masked values only)
+      responses:
+        '200': { description: Cards }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/cards/{id}/block:
+    post:
+      summary: Block a card
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Blocked }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/cards/{id}/unblock:
+    post:
+      summary: Unblock a card
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Unblocked }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/transactions:
+    get:
+      summary: Transaction history with filter/search/sort/pagination
+      parameters:
+        - { name: accountId, in: query, schema: { type: string, format: uuid } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/TransactionType' } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: minAmount, in: query, schema: { type: string } }
+        - { name: maxAmount, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string } }
+        - { name: to, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [created_at, amount, type, merchant, category] } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: offset, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Transactions }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/transactions/{id}:
+    get:
+      summary: Single transaction
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Transaction }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/transfers:
+    get:
+      summary: External/batch transfer history
+      responses:
+        '200': { description: Transfers }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/transfers/banks:
+    get:
+      summary: Supported external banks with caps and fees
+      responses:
+        '200': { description: Bank list }
+
+  /api/transfers/internal:
+    post:
+      summary: Transfer to another PGC customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromAccountId, toUsername, toAccountType, amount]
+              properties:
+                fromAccountId: { type: string, format: uuid }
+                toUsername: { type: string }
+                toAccountType: { $ref: '#/components/schemas/AccountType' }
+                amount: { type: number, exclusiveMinimum: 0, maximum: 500 }
+                note: { type: string }
+      responses:
+        '200': { description: Completed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { description: Account frozen }
+        '404': { description: Recipient or account not found }
+
+  /api/transfers/external:
+    post:
+      summary: Transfer to a mock external bank
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromAccountId, bankCode, accountNumber, accountName, amount]
+              properties:
+                fromAccountId: { type: string, format: uuid }
+                bankCode: { $ref: '#/components/schemas/BankCode' }
+                accountNumber: { type: string }
+                accountName: { type: string }
+                amount: { type: number, exclusiveMinimum: 0, maximum: 1000 }
+                note: { type: string }
+      responses:
+        '201': { description: Submitted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { description: Account frozen }
+
+  /api/transfers/batch:
+    post:
+      summary: All-or-nothing batch of external transfers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromAccountId, transfers]
+              properties:
+                fromAccountId: { type: string, format: uuid }
+                transfers:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    required: [bankCode, accountNumber, accountName, amount]
+                    properties:
+                      bankCode: { $ref: '#/components/schemas/BankCode' }
+                      accountNumber: { type: string }
+                      accountName: { type: string }
+                      amount: { type: number, exclusiveMinimum: 0, maximum: 1000 }
+                      note: { type: string }
+      responses:
+        '201': { description: Batch submitted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { description: Account frozen }
+
+  /api/bills:
+    get:
+      summary: Bill payment history
+      responses:
+        '200': { description: Bills }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/bills/pay:
+    post:
+      summary: Pay a bill (saved payee or one-off details)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromAccountId, amount]
+              properties:
+                fromAccountId: { type: string, format: uuid }
+                amount: { type: number, exclusiveMinimum: 0, maximum: 2000 }
+                payeeId: { type: string, format: uuid }
+                payeeName: { type: string }
+                billType: { $ref: '#/components/schemas/BillType' }
+                accountNumber: { type: string }
+                dueDate: { type: string }
+                memo: { type: string }
+      responses:
+        '201': { description: Paid }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { description: Account frozen }
+        '404': { description: Payee or account not found }
+
+  /api/bills/payees:
+    get:
+      summary: Saved payees
+      responses:
+        '200': { description: Payees }
+    post:
+      summary: Save a payee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, billType, accountNumber]
+              properties:
+                name: { type: string }
+                billType: { $ref: '#/components/schemas/BillType' }
+                accountNumber: { type: string }
+      responses:
+        '201': { description: Created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/bills/payees/{id}:
+    delete:
+      summary: Delete a saved payee
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/loans:
+    get:
+      summary: The caller's loans
+      responses:
+        '200': { description: Loans }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/loans/apply:
+    post:
+      summary: Apply for a loan (auto-approves and disburses under $2000)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, termMonths]
+              properties:
+                amount: { type: number, minimum: 500, maximum: 10000 }
+                termMonths: { $ref: '#/components/schemas/LoanTerm' }
+                purpose: { type: string }
+                employmentStatus:
+                  type: string
+                  enum: [employed, self_employed, contract, retired, student]
+                annualIncome: { type: number, minimum: 0 }
+                disburseAccountId: { type: string, format: uuid }
+      responses:
+        '201': { description: Application recorded }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { description: Disbursement account not found }
+
+  /api/loans/{id}:
+    get:
+      summary: Single loan
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Loan }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/investments:
+    get:
+      summary: The caller's holdings
+      responses:
+        '200': { description: Investments }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Purchase into an investment plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromAccountId, planType, amount, durationMonths]
+              properties:
+                fromAccountId: { type: string, format: uuid }
+                planType:
+                  type: string
+                  enum: [money_market, fixed_deposit, balanced_fund, growth_equity]
+                amount: { type: number, minimum: 100, maximum: 5000 }
+                durationMonths: { type: integer, enum: [3, 6, 12, 24, 36, 60] }
+      responses:
+        '201': { description: Created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { description: Account frozen }
+
+  /api/investments/plans:
+    get:
+      summary: Investment plan catalogue
+      responses:
+        '200': { description: Plans }
+
+  /api/investments/{id}/withdraw:
+    post:
+      summary: Withdraw an investment (principal only before maturity)
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Withdrawn }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/statements:
+    get:
+      summary: Generated statement history
+      responses:
+        '200': { description: Statements }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/statements/generate:
+    post:
+      summary: Generate a PDF or CSV account statement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountId, from, to]
+              properties:
+                accountId: { type: string, format: uuid }
+                from: { type: string }
+                to: { type: string }
+                format: { type: string, enum: [pdf, csv] }
+      responses:
+        '201': { description: Generated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { description: Account not found }
+
+  /api/statements/{id}/download:
+    get:
+      summary: Download a generated statement file
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: File stream }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/notifications:
+    get:
+      summary: Notifications with unread count
+      parameters:
+        - { name: unreadOnly, in: query, schema: { type: string, enum: ['true'] } }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Notifications }
+
+  /api/notifications/{id}/read:
+    post:
+      summary: Mark a notification read (no-op if already read)
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Marked }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/notifications/read-all:
+    post:
+      summary: Mark all notifications read
+      responses:
+        '200': { description: Marked }
+
+  /api/audit-log:
+    get:
+      summary: The caller's security activity log
+      parameters:
+        - { name: eventType, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: offset, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Audit entries }
+
+  /api/uploads:
+    get:
+      summary: List uploaded files
+      responses:
+        '200': { description: Uploads }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Upload a file (content scanning surface — unrestricted by design)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201': { description: Uploaded }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/uploads/{id}:
+    get:
+      summary: Download an uploaded file
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: File stream }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Delete an uploaded file
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PathId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: string }
+
+  schemas:
+    AccountType:
+      type: string
+      enum: [savings, checking, investment]
+    BankCode:
+      type: string
+      enum: [FNB, MTB, PCU, SVB, HRZ]
+    BillType:
+      type: string
+      enum: [electricity, water, internet, mobile, credit_card, insurance]
+    LoanTerm:
+      type: integer
+      enum: [6, 12, 24, 36, 48, 60]
+    TransactionType:
+      type: string
+      enum: [deposit, withdrawal, transfer_in, transfer_out, bill_payment, loan_payment, investment_purchase]
+    ErrorBody:
+      type: object
+      properties:
+        error: { type: string }
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+    NotFound:
+      description: Resource not found (or not owned by the caller)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }

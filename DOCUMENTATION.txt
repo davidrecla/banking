@@ -1,0 +1,114 @@
+PGC BANK DEMO APPLICATION — SYSTEM DOCUMENTATION
+=================================================
+
+PURPOSE
+-------
+Demo Internet-banking app for Cloudflare customer POCs showcasing API Shield
+(schema validation, API Discovery, JWT validation, session identifiers) and
+WAF capabilities (managed rules, rate limiting rules, malicious uploads
+content scanning). Every UI action maps to a documented REST API call so the
+entire feature set is exercisable headlessly in front of a customer.
+
+LIVE ENDPOINTS
+--------------
+https://banking.puregroundscoffee.com     (custom domain, production)
+https://banking.davidrecla.workers.dev    (workers.dev hostname, same app)
+
+UI PAGES
+--------
+/               Public marketing homepage
+/login          Login form
+/dashboard      Balances, quick actions, internal transfer, recent activity
+/transactions   History with filter / search / sort / pagination
+/bills          Bill payment + saved payee management
+/loans          Loan application with live payment calculator
+/investments    Plan catalogue, purchase calculator, withdrawal
+/transfers      External and batch transfers to mock banks
+/statements     PDF/CSV statement generation and history
+/cards          Card list with block/unblock
+/profile        User details, notifications, security activity log
+/uploads        Document upload / download / delete
+
+STACK
+-----
+- Cloudflare Worker (vanilla JS, single artifact) — src/index.js routes
+  /api/*; everything else is served from public/ via Workers Assets
+- D1 (bank-database)     — all relational data; the ledger reconciles
+                           (balance == settled credits - settled debits)
+- KV (BANK_KV)           — rate-limit counters (login attempts, daily transfer
+                           totals)
+- R2 (BANK_BUCKET)       — uploaded documents and generated PDF/CSV statements
+- JWT_SECRET             — Cloudflare secret; HS256 tokens, 24h expiry;
+                           claims: sub, username, role
+- pdf-lib                — statement PDFs (the one runtime dependency)
+
+DEMO DATA
+---------
+5 users (admin + 4 customers), 3 accounts each (savings/checking/investment),
+~95 seeded transactions spanning 6 months, 10 masked cards, seeded
+notifications + audit history. Balances derive from the ledger, not a flat
+seed figure. Credentials are documented only in BUILD-PLAN.md.
+
+PHASE 4 SECURITY SHOWCASE
+-------------------------
+Nine intentionally vulnerable endpoints (src/routes/vulnerable.js) implement
+the OWASP API Security Top 10 mapping defined in BUILD-PLAN.md:
+
+  API1  BOLA                      GET  /api/users/:userId/balance
+  API2  Broken authentication     GET  /api/internal/debug
+  API3  Excessive data exposure   GET  /api/profile (+ undocumented ?internal=1)
+  API4  Unrestricted resource     POST /api/transfers/express
+        consumption
+  API5  Broken function-level     GET  /api/admin/users
+        authorization             POST /api/admin/loans/:id/force-approve
+  API6  Sensitive business flows  existing POST /api/loans/apply (no daily cap)
+  API7  SSRF                      POST /api/profile/avatar-from-url
+  API8  Security misconfiguration POST /api/debug/parse (stack-trace 500s)
+  API9  Improper inventory        GET  /api/v1/accounts (shadow API)
+
+The showcase endpoints are isolated from the legitimate surface, absent from
+openapi-schema.yaml, and excluded from the UI. The intended flow:
+
+  1. ./test-api.sh                 — legitimate API works (39 checks)
+  2. ./attack-simulation.sh before — every exploit succeeds
+  3. Enable Cloudflare controls (API Shield schema upload + fallthrough rule,
+     JWT validation rules, rate limiting rules, managed WAF rules, content
+     scanning)
+  4. ./attack-simulation.sh after  — every exploit blocked at the edge
+  5. Security Events + API Discovery dashboards show the blocked attempts and
+     the discovered shadow endpoint
+
+EXPECTED CLOUDFLARE CONTROL PER ATTACK
+--------------------------------------
+  API1  WAF rate limiting rule on /api/users/*/balance (enumeration = high rate)
+  API2  API Shield JWT validation rule (is_jwt_present) on /api/internal/*
+  API3  Schema validation: /api/profile declares no query params
+  API4  WAF rate limiting rule on /api/transfers/express
+  API5  Schema fallthrough rule (/api/admin/* is not in the schema)
+        + JWT validation rule on the role claim
+  API6  WAF rate limiting rule on loans/investments POSTs
+  API7  Schema validation: URL field pinned to an allowlisted pattern
+  API8  Schema validation: strict typing 400s malformed bodies at the edge
+  API9  API Discovery surfaces the shadow endpoint; fallthrough rule blocks it
+
+KNOWN DEMO-ENVIRONMENT CAVEATS
+------------------------------
+- EICAR uploads from the author's machine are blocked client-side by the
+  local network's Cloudflare Gateway policy (302 to a block page) — demo
+  content scanning from a clean network or device.
+- curl on that network needs --ssl-no-revoke (both scripts set it).
+- wrangler d1 execute --file does not work on that network; use individual
+  --command calls (all scripts under scripts/ do this).
+- The SQLi probe on ?sort is already handled: app-level whitelist 400s, and
+  the zone's managed WAF has been observed returning 403 at the edge for
+  SQLi-shaped payloads.
+
+FILES OF RECORD
+---------------
+BUILD-PLAN.md          architecture, schema, demo credentials, environment
+                       notes — read before changing anything
+API_REFERENCE.md       full endpoint reference (legit + showcase)
+openapi-schema.yaml    OpenAPI 3.0, legitimate endpoints only (API Shield
+                       upload artifact)
+test-api.sh            legitimate-API contract check
+attack-simulation.sh   exploit suite with before/after verdict modes
