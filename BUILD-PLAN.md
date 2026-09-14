@@ -552,10 +552,18 @@ Delivered as three PRs: #14 statements + schema + lockfile, #15 cards + enforced
 - [x] `attack-simulation.sh` — exercises each intentional vulnerability with `before`/`after` verdict modes (the same script is both demo acts; damage contained by construction). Verified "before" run against production: all 9 vulnerabilities succeed, incl. the $3000 force-approve fraud and a 20-transfer burst. Two environment findings: (a) the SQLi probe now 400s from the app's own sort whitelist — the Phase 2-era 403 came from managed rules blocking before the app saw it, and with rules in their current zone state the app handles it; (b) the EICAR upload is intercepted by a **client-side Cloudflare Gateway policy** on the demo machine's egress (302 to `blocked.teams.cloudflare.com`) before it leaves the network — that's the local network's SWG, not the zone's content scanning; demo malicious-uploads detection from a clean network/device or after adjusting that Gateway policy.
 - [x] Finalize `README.md` / `DOCUMENTATION.txt` / `API_REFERENCE.md`
 
-### Phase 5 — Optional Stretch
-- [ ] mTLS protection for `/api/internal/*` routes
+### Phase 5 — Demo Weaponization & Edge Configuration — ✅ COMPLETE
+The demo/attack tooling built in the final sessions (originally scattered across Phase 4 notes and "stretch" items) is now formally Phase 5:
+- [x] Cloudflare edge fully configured **as code** via `scripts/demo-edge-config.py` (sync/arm/disarm/status): OpenAPI schema uploaded (`91d2a8e1`), 41 endpoint-management ops synced, seven "PGC demo:" rules staged (fallthrough, unauth internal-debug, malicious-uploads content scan, profile query-string, three rate limits), schema validation action toggled log↔block. Idempotent; never touches non-"PGC demo:" zone rules.
+- [x] Full end-to-end demo execution verified against production twice: before-run 11/11 VULNERABLE, after-run 11/11 BLOCKED, legitimate traffic unaffected while armed, disarm restores baseline.
+- [x] `POC-ATTACK-GUIDE.html` — the meeting artifact (tabbed by part; per-attack executable curl blocks; zone recovery commands).
+- [x] Non-API attack legs added to the demo: exposed-credential check, sensitive-data detection framing, and a homepage upload widget exercising content scanning against a real R2 write.
 - [x] Custom domain setup (`banking.puregroundscoffee.com`) — done early, see Phase 1.5
-- [x] Configure API Shield + WAF for the demo: done via `scripts/demo-edge-config.py` (schema uploaded, operations synced, six protective rules staged, arm/disarm verified end-to-end against production). See POC-ATTACK-GUIDE.html for the meeting runbook. Remaining Phase 5 scope: mTLS and the optional JWT-validation upgrade
+- Entitlements verified: zone is Enterprise, content scanning enabled, API Shield APIs responsive
+
+### Phase 6 — Optional (not in original scope)
+- [ ] mTLS protection for `/api/internal/*` routes (contrast with the intentionally-missing-auth `/api/internal/debug`) — needs per-client certificates distributed to run it
+- [ ] Native API Shield JWT validation (edge signature + role-claim rules) — needs the JWT secret pasted in a Token Configuration; the staged custom rules already cover the same demo moments
 
 ---
 

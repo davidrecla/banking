@@ -484,6 +484,24 @@ a { color: var(--dbs-red); }
 .home-footer-links a:hover { color: var(--dbs-red); }
 .footer-login { color: var(--dbs-red) !important; }
 
+/* Homepage content-scanning demo upload (Phase 5) */
+.demo-upload-card {
+  background: #fff;
+  border-top: 4px solid var(--dbs-red);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.07);
+  padding: 22px;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+.demo-upload-msg { font-size: 14px; min-height: 20px; text-align: center; }
+.demo-upload-msg.ok { color: #1a7f37; }
+.demo-upload-msg.err { color: var(--dbs-red); }
+
 @media (max-width: 640px) {
   .hero-copy h1 { font-size: 30px; }
 }

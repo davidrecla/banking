@@ -97,6 +97,22 @@
   </div>
 </section>
 
+<section class="features">
+  <div class="features-inner">
+    <h2>File uploads, scanned before they land</h2>
+    <p style="max-width:640px;color:var(--dbs-gray);margin:0 auto 18px;">
+      Try it live: upload any file below. Every upload is inspected at the Cloudflare edge
+      before it reaches our storage — known-bad files (test it with an antivirus test file)
+      are rejected on the spot, everything else lands safely in our documents vault.
+    </p>
+    <div class="demo-upload-card">
+      <input type="file" id="demoFileInput" />
+      <button class="btn-primary" id="demoUploadBtn">Upload securely</button>
+      <div id="demoUploadMsg" class="demo-upload-msg"></div>
+    </div>
+  </div>
+</section>
+
 <footer class="home-footer">
   <div class="home-footer-inner">
     <div>PGC <span class="brand-mark">BANK</span> &mdash; a Cloudflare security demo</div>
@@ -107,6 +123,56 @@
     </div>
   </div>
 </footer>
+
+<script>
+// Content-scanning demo upload on the public homepage (Phase 5).
+// Uploads go through the real /api/uploads endpoint (JWT required) so the
+// request passes the zone's WAF content-scanning rule on its way into R2.
+(function () {
+  const btn = document.getElementById('demoUploadBtn');
+  const input = document.getElementById('demoFileInput');
+  const msg = document.getElementById('demoUploadMsg');
+
+  function say(text, ok) {
+    msg.textContent = text;
+    msg.className = 'demo-upload-msg ' + (ok === true ? 'ok' : ok === false ? 'err' : '');
+  }
+
+  btn.addEventListener('click', async function () {
+    const token = localStorage.getItem('pgc_token');
+    if (!token) {
+      say('Log in first to try the secure upload demo.', false);
+      window.location.href = '/login';
+      return;
+    }
+    const file = input.files[0];
+    if (!file) { say('Choose a file first.', false); return; }
+
+    say('Uploading ' + file.name + '…');
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const res = await fetch('/api/uploads', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token },
+        body: form
+      });
+      if (res.status === 403) {
+        say('Blocked at the Cloudflare edge — content scanning flagged this file before it reached our storage.', false);
+        return;
+      }
+      const data = await res.json().catch(function () { return {}; });
+      if (res.status === 201) {
+        say('Uploaded and stored safely (' + (data.filename || file.name) + ', ' + (data.size || '?') + ' bytes). View it under Documents.', true);
+      } else {
+        say(data.error || ('Upload failed (' + res.status + ')'), false);
+      }
+    } catch (err) {
+      say('Network error: ' + err.message, false);
+    }
+  });
+})();
+</script>
 
 </body>
 </html>
