@@ -4,7 +4,7 @@
 
 **Base spec source:** `FUNCTIONALITY-SUMMARY.md` (original requirements doc, in the user's Downloads folder, not part of this repo), extended with security-showcase additions decided during planning.
 
-**Status as of end of Phase 1: live in production.** Read this whole file before starting Phase 2 — it has everything needed to continue without re-deriving context.
+**Status: Phases 1, 1.5 and 2 are complete and live in production.** Next up is Phase 3 (statements, cards, notifications). Read this whole file before starting — it has everything needed to continue without re-deriving context.
 
 ---
 
@@ -34,7 +34,12 @@ banking/
 ├── public/                    # Static UI, served automatically by Workers Assets (see [assets] in wrangler.toml)
 │   ├── index.html              # Public marketing homepage (served at /)
 │   ├── login.html              # Login page (served at /login)
-│   ├── dashboard.html          # Balances + internal transfer form
+│   ├── dashboard.html          # Balances, quick actions, internal transfer form, recent transactions
+│   ├── transactions.html       # Transaction history: filter/search/sort/paginate (served at /transactions)
+│   ├── bills.html              # Pay bills + manage saved payees (/bills)
+│   ├── loans.html              # Loan application with live payment calculator (/loans)
+│   ├── investments.html        # Plan cards, purchase with return calculator, withdraw (/investments)
+│   ├── transfers.html          # External + batch transfers to mock banks (/transfers)
 │   ├── uploads.html            # Documents/file upload page
 │   ├── app.js                  # Shared client helpers: auth token storage, authFetch(), toasts, formatCurrency()
 │   └── styles.css              # DBS-inspired styling (see "UI Design" section below)
@@ -42,13 +47,15 @@ banking/
 │   └── 001_phase1_initial.sql # D1 schema (users, accounts, transactions, uploads) — reference copy; actually applied via individual --command calls, see below
 ├── scripts/
 │   ├── generate-seed.mjs      # Generates .ps1 of wrangler d1 execute --command calls to seed 5 demo users + 15 accounts
-│   └── update-passwords.mjs   # Generates .ps1 of UPDATE statements to change existing users' passwords (used when password scheme changed post-seed)
+│   ├── update-passwords.mjs   # Generates .ps1 of UPDATE statements to change existing users' passwords (used when password scheme changed post-seed)
+│   ├── generate-phase2-schema.mjs  # Emits .ps1 applying schema/002_phase2.sql one statement at a time
+│   └── generate-transactions.mjs   # Emits .ps1 seeding ~90 mock transactions over 6 months (needs an accounts.json dump; see its header)
 ├── wrangler.toml               # Worker config: bindings (D1/KV/R2/Assets), no secrets here (JWT_SECRET is a real Cloudflare secret)
 ├── package.json
 └── BUILD-PLAN.md               # This file
 ```
 
-Two generated files are gitignored (regenerate via their `.mjs` source if needed): `scripts/seed-commands.ps1`, `scripts/update-passwords-commands.ps1`.
+Generated files are gitignored (regenerate via their `.mjs` source if needed): `scripts/seed-commands.ps1`, `scripts/update-passwords-commands.ps1`, `scripts/phase2-schema.ps1`, `scripts/transactions-seed.ps1`, `scripts/accounts.json`.
 
 ---
 
@@ -138,13 +145,93 @@ CREATE TABLE uploads (
 -- plus indexes on accounts.user_id, transactions.account_id, uploads.user_id
 ```
 
+## D1 Schema — Phase 2 additions (applied and live)
+
+Reference copy in `schema/002_phase2.sql`. Applied via `node scripts/generate-phase2-schema.mjs > scripts/phase2-schema.ps1` and running that script (one `--command` per statement — see note 1).
+
+```sql
+CREATE TABLE payees (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  bill_type TEXT NOT NULL, -- electricity | water | internet | mobile | credit_card | insurance
+  account_number TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE bills (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  payee_id TEXT REFERENCES payees(id),        -- NULL for one-off payments
+  from_account_id TEXT NOT NULL REFERENCES accounts(id),
+  bill_type TEXT NOT NULL,
+  payee_name TEXT NOT NULL,                   -- copied, so deleting a payee doesn't rewrite history
+  account_number TEXT NOT NULL,               -- likewise
+  amount REAL NOT NULL,
+  due_date TEXT,
+  memo TEXT,
+  confirmation_number TEXT NOT NULL,          -- display-only, e.g. PGC-4F2A9C
+  status TEXT NOT NULL DEFAULT 'completed',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE loans (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  disburse_account_id TEXT REFERENCES accounts(id),  -- NULL if never disbursed
+  amount REAL NOT NULL,
+  term_months INTEGER NOT NULL,
+  purpose TEXT,
+  employment_status TEXT,                     -- employed | self_employed | contract | retired | student
+  annual_income REAL,
+  interest_rate REAL NOT NULL,
+  monthly_payment REAL NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_review', -- approved | pending_review | rejected
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE investments (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  from_account_id TEXT NOT NULL REFERENCES accounts(id),
+  plan_type TEXT NOT NULL,                    -- money_market | fixed_deposit | balanced_fund | growth_equity
+  amount REAL NOT NULL,
+  duration_months INTEGER NOT NULL,
+  annual_rate REAL NOT NULL,
+  projected_return REAL NOT NULL,
+  maturity_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',      -- active | withdrawn
+  withdrawn_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- External transfers are recorded here AS WELL AS in `transactions`, because
+-- destination-bank detail has nowhere to live on a transaction row. Internal
+-- transfers still use `transactions` alone.
+CREATE TABLE transfers (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  from_account_id TEXT NOT NULL REFERENCES accounts(id),
+  to_account_id TEXT REFERENCES accounts(id),
+  external_bank TEXT,
+  external_account_number TEXT,
+  external_account_name TEXT,
+  amount REAL NOT NULL,
+  fee REAL NOT NULL DEFAULT 0,
+  note TEXT,
+  reference_number TEXT NOT NULL,             -- display-only, e.g. TRF-8KD2M4XP
+  batch_id TEXT,                              -- shared by all items of one batch; NULL for single
+  status TEXT NOT NULL DEFAULT 'completed',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- plus indexes on payees.user_id, bills.user_id, loans.user_id,
+-- investments.user_id, transfers.user_id, transfers.batch_id,
+-- transactions.created_at
+```
+
 ### Planned additions for later phases (not yet created)
 ```sql
-transfers (id, from_account_id, to_account_id NULLABLE, external_bank NULLABLE, external_account_number NULLABLE, external_account_name NULLABLE, amount, note, fee, status, created_at)
-bills (id, user_id FK, bill_type, payee_name, account_number, amount, due_date, confirmation_number, status, created_at)
-payees (id, user_id FK, name, bill_type, account_number)
-loans (id, user_id FK, amount, term_months, purpose, employment_info, income, interest_rate, monthly_payment, status, created_at)
-investments (id, user_id FK, plan_type, amount, duration, projected_return, status, maturity_date, created_at)
 cards (id, user_id FK, card_number_masked, expiry, cvv_masked, status, linked_account_id FK)
 notifications (id, user_id FK, type, message, read, created_at)
 audit_logs (id, user_id FK, event_type, ip_address, device_info, created_at)
@@ -177,25 +264,48 @@ All routes below live in `src/index.js` (the router) and are implemented in `src
 
 All responses are JSON except file downloads (raw bytes with correct `Content-Type`/`Content-Disposition`). CORS is wide open (`Access-Control-Allow-Origin: *`) since this is a demo.
 
-### Planned for later phases (not yet implemented — this is where Phase 2 picks up)
+## API Endpoints — Phase 2 (implemented and live)
+
+Implemented in `src/routes/transactions.js`, `bills.js`, `loans.js`, `investments.js` and (extended) `transfers.js`. All require `Authorization: Bearer <jwt>`.
+
+### Transaction history
+- `GET /api/transactions` — query params: `accountId`, `type`, `category`, `search` (merchant/description substring), `minAmount`, `maxAmount`, `from`, `to`, `sort` (`created_at|amount|type|merchant|category`), `order` (`asc|desc`), `limit` (1-100, default 25), `offset`. Returns `{ transactions, pagination: { total, limit, offset, hasMore } }`.
+  - **Always scoped to the caller** by joining through `accounts` on `user_id` — passing another user's `accountId` returns zero rows, not their data.
+  - `sort` resolves through a **whitelist map**, since column names can't be bind parameters. Unknown keys 400.
+- `GET /api/transactions/:id` — ownership-checked single transaction.
+- ~90 mock transactions spanning 6 months are seeded via `scripts/generate-transactions.mjs` (see below).
+
+### Bills
+- `GET /api/bills/payees`, `POST /api/bills/payees` (body `{ name, billType, accountNumber }`), `DELETE /api/bills/payees/:id`.
+- `POST /api/bills/pay` — body `{ fromAccountId, amount, payeeId? | (payeeName + billType + accountNumber), dueDate?, memo? }`. **$2000/txn cap.** When `payeeId` is given, the stored payee's details take precedence over anything passed alongside it (so a caller can't reference a saved payee while redirecting the money).
+- `GET /api/bills` — payment history with confirmation numbers.
+- The debit, the `transactions` row and the `bills` row are written in one `batch()`.
+
+### Loans
+- `POST /api/loans/apply` — body `{ amount, termMonths, purpose?, employmentStatus?, annualIncome?, disburseAccountId? }`. **$500–$10,000**, terms 6/12/24/36/48/60 months.
+  - **Under $2000: auto-approved and disbursed immediately** — credits the account and writes a `deposit` ledger row, so `disburseAccountId` is required.
+  - **$2000 and above: `pending_review`, disburses nothing.**
+  - Account ownership is validated even when not disbursing, so a pending loan can't be filed against someone else's account.
+- `GET /api/loans`, `GET /api/loans/:id` (ownership-checked).
+- Rate by term: ≤12mo 5.5%, ≤24mo 6.5%, ≤36mo 7.5%, ≤48mo 8.5%, else 9.5%. `interestRateFor()` and `monthlyPaymentFor()` are **exported and duplicated verbatim in `public/loans.html`** so the live calculator matches what the server records. **If you change one, change both.**
+
+### Investments
+- `GET /api/investments/plans` — the four plans: `money_market` 3.25% (low, 3/6/12mo), `fixed_deposit` 4.5% (low, 6/12/24mo), `balanced_fund` 6.75% (medium, 12/24/36mo), `growth_equity` 9.5% (high, 12/36/60mo).
+- `POST /api/investments` — body `{ fromAccountId, planType, amount, durationMonths }`. **$100–$5000**; `durationMonths` is validated **per plan**, not globally. Debits the funding account.
+- `GET /api/investments` — holdings, with `plan_name` resolved from the plan table.
+- `POST /api/investments/:id/withdraw` — pays into the original funding account. **Before maturity returns principal only**; at/after maturity returns `projected_return`. Withdrawing twice is rejected.
+- `projectedReturnFor()` is likewise mirrored in `public/investments.html`.
+
+### Transfers (external + batch)
+- `GET /api/transfers/banks` — the 5 mock banks (`FNB` First National, `MTB` Metro Trust, `PCU` Pacific Credit Union, `SVB` Summit Valley, `HRZ` Horizon Financial) plus the cap and fee, so the UI doesn't hardcode them.
+- `POST /api/transfers/external` — body `{ fromAccountId, bankCode, accountNumber, accountName, amount, note? }`. **$1000/txn cap, flat $2.50 fee**; amount + fee are debited together.
+- `POST /api/transfers/batch` — body `{ fromAccountId, transfers: [{ bankCode, accountNumber, accountName, amount, note? }] }`, **max 10 items**. **All-or-nothing:** every item is validated before any write, and the combined total *including fees* is checked against the balance up front, so a bad entry mid-list can't leave a partially-applied batch. Errors name the offending index (`transfers[1]: ...`). Items share a `batch_id`.
+- `GET /api/transfers` — external/batch history with reference numbers.
+
+### Planned for later phases (not yet implemented)
 ```
-POST /api/accounts/:id/freeze
-POST /api/accounts/:id/unfreeze
-POST /api/transfers/external        (5 mock banks, $1000/txn cap)
-POST /api/transfers/batch
-GET  /api/bills/payees
-POST /api/bills/payees
-POST /api/bills/pay                 ($2000/txn cap)
-GET  /api/bills
-POST /api/loans/apply               ($500-$10k, auto-approve <$2k)
-GET  /api/loans
-GET  /api/loans/:id
-GET  /api/investments/plans
-POST /api/investments               ($100-$5000)
-GET  /api/investments
-POST /api/investments/:id/withdraw
-GET  /api/transactions              (filter/search/sort/paginate, ~80-100 seeded mock transactions)
-GET  /api/transactions/:id
+POST /api/accounts/:id/freeze       — Phase 3
+POST /api/accounts/:id/unfreeze     — Phase 3
 POST /api/statements/generate       (PDF via pdf-lib, or CSV) — Phase 3
 GET  /api/statements                — Phase 3
 GET  /api/statements/:id/download   — Phase 3
@@ -227,7 +337,11 @@ Design conventions used (see `public/styles.css`, CSS variables at the top):
 - No emoji icons anywhere (previously had 🏦💰💳 etc. — removed for a more professional/bank-like look)
 - No demo credentials displayed on the login page (removed — they live only in this file now)
 
-Pages: `index.html` (public marketing homepage at `/`), `login.html` (login form at `/login`), `dashboard.html` (balances + internal transfer form; other quick-action buttons for bills/loans/invest are visible but disabled with "Coming in Phase 2" tooltips), `uploads.html` (Documents page: upload/list/download/delete files).
+Pages: `index.html` (public marketing homepage at `/`), `login.html` (login form at `/login`), `dashboard.html` (balances, quick actions, internal transfer form, 5 most recent transactions), `transactions.html`, `bills.html`, `loans.html`, `investments.html`, `transfers.html`, `uploads.html` (Documents page: upload/list/download/delete files).
+
+**All dashboard quick actions are now wired up** (Transfer Money, Send to Another Bank, Pay Bills, Apply for Loan, Invest) — no disabled Phase 2 placeholders remain.
+
+Phase 2 added these shared CSS component classes to `styles.css`, all built from the same `:root` tokens — reuse them rather than inventing new ones: `.filter-grid`/`.filter-actions`/`.btn-inline` (filter panels), `.txn-table` + `th.sortable` (sortable tables), `.status-pill` + `.status-completed|pending|failed`, `.amount-credit`/`.amount-debit`, `.pagination-bar`, `.calc-panel`/`.calc-item`/`.calc-label`/`.calc-value` (live calculators), `.plan-grid`/`.plan-card`/`.risk-low|medium|high`, `.batch-row`. Green `#1a7f37` for credits and amber `#8a5a00` for pending are the only colors outside the red/black/white palette, used solely for financial/status semantics.
 
 The homepage is modeled loosely on Metrobank's homepage (https://www.metrobank.com.ph/home): hero with CTA, a row of quick-action tiles, a feature-highlights section, and a footer. **Its nav/tile/footer links other than "Login" are deliberately inert** (`onclick="return false;"`) because the features behind them don't exist yet — wire them to real pages as those get built in Phase 2/3. The Login links (top nav, hero CTA, footer) point at `/login`.
 
@@ -253,6 +367,10 @@ The homepage is modeled loosely on Metrobank's homepage (https://www.metrobank.c
 | API10 | Unsafe Consumption of 3rd-Party APIs | External transfer flow | Blindly trusts mock external bank's response without validation |
 
 **Do not implement these until Phase 4**, and only on separate, clearly-named endpoints — keep them isolated from the legitimate API surface so the "before/after API Shield" story stays clean for the demo.
+
+### Cloudflare WAF already blocks some attacks before they reach the Worker
+
+Observed during Phase 2 testing: a SQLi-shaped query string (`?sort=amount;DROP+TABLE+users`) returned **403 from Cloudflare's WAF at the edge** — the request never reached the Worker. Encouraging for the WAF half of the demo, but it has a direct consequence for Phase 4: **`attack-simulation.sh` cannot assume its payloads will reach the app.** Some attacks will be blocked upstream, which is great for the "after" story but means the "before" (vulnerable) demonstration may need managed rules relaxed, a bypass rule for the demo hostname, or attacks shaped to slip past pattern matching. Decide that deliberately when writing Phase 4 rather than discovering it mid-demo.
 
 ### WAF / Content Scanning Test Surfaces
 - File uploads (`/api/uploads`, already built, no restrictions) — test with the **EICAR test string** (safe, industry-standard fake-malware test file) to validate malware/content scanning
@@ -284,17 +402,20 @@ The homepage is modeled loosely on Metrobank's homepage (https://www.metrobank.c
 - [x] Merged via PR #4 into `main`
 - [x] Custom domain `banking.puregroundscoffee.com` declared in `wrangler.toml` as a `[[routes]]` entry with `custom_domain = true`
 
-### Phase 2 — Extended Banking Features (START HERE NEXT)
-- [ ] D1 schema additions: `bills`, `payees`, `loans`, `investments` (add a new `schema/002_phase2.sql` file for reference, apply via individual `--command` calls per the network workaround below — do not assume `--file` works)
-- [ ] Bill payment endpoints (`src/routes/bills.js`) + UI page (`public/bills.html`, follow the pattern of `uploads.html`)
-- [ ] Loan application endpoints (`src/routes/loans.js`, auto-approve <$2k, manual review ≥$2k) + UI page with live monthly payment calculator
-- [ ] Investment endpoints (`src/routes/investments.js`, 4 plans) + UI page with projected return calculator
-- [ ] External transfer endpoint (5 mock banks) + batch transfer endpoint (extend `src/routes/transfers.js`)
-- [ ] Transaction history endpoint (filter/search/sort/paginate) + Transactions UI page — will need a seed script for ~80-100 mock transactions spanning 6 months (follow the `scripts/generate-seed.mjs` pattern)
-- [ ] Wire up the currently-disabled dashboard quick-action buttons (Pay Bills / Apply for Loan / Invest) once their pages exist
-- [ ] Update this file's endpoint/schema/phase sections as you go, same level of detail as Phase 1
+### Phase 2 — Extended Banking Features — ✅ COMPLETE AND MERGED TO MAIN (live in production)
+Delivered as four PRs so each stayed independently reviewable: #8 schema + transactions, #9 bills, #10 loans + investments, #11 external/batch transfers.
+- [x] D1 schema additions: `payees`, `bills`, `loans`, `investments`, `transfers` (+ indexes) — `schema/002_phase2.sql`, applied via `scripts/generate-phase2-schema.mjs`
+- [x] Bill payment endpoints (`src/routes/bills.js`) + `public/bills.html` — $2000/txn cap, saved payees, confirmation numbers
+- [x] Loan application endpoints (`src/routes/loans.js`, auto-approve <$2k and disburse, manual review ≥$2k) + `public/loans.html` with live monthly payment calculator
+- [x] Investment endpoints (`src/routes/investments.js`, 4 plans) + `public/investments.html` with projected return calculator and withdrawal
+- [x] External transfer endpoint (5 mock banks, $1000/txn, $2.50 fee) + all-or-nothing batch transfer endpoint (extended `src/routes/transfers.js`) + `public/transfers.html`
+- [x] Transaction history endpoint (filter/search/sort/paginate) + `public/transactions.html`; ~90 mock transactions over 6 months seeded via `scripts/generate-transactions.mjs`
+- [x] Wired up every dashboard quick-action button
+- [x] Updated this file's endpoint/schema/phase sections
 
-### Phase 3 — Statements, Cards, Notifications
+**Post-Phase-2 data baseline.** Phase 2 was tested against live D1, then cleaned up. Verified state: all 15 accounts at exactly **$3000**, `loans`/`investments`/`transfers`/`bills`/`payees` all **empty**, **92** transactions (90 seeded + the 2 original Phase 1 test transfers), 13 categories, 7 types. If a future session's counts differ, that is leftover test data rather than seed data. Note the seeded transactions deliberately **do not** reconcile against balances — they are display history only.
+
+### Phase 3 — Statements, Cards, Notifications (START HERE NEXT)
 - [ ] `pdf-lib` integration (`bun add pdf-lib` — first non-trivial dependency in this project, verify it bundles fine with `wrangler deploy`); generate statement PDFs, store in R2 (`statements/{userId}/{statementId}.pdf`)
 - [ ] CSV export (simple string-building, no library)
 - [ ] Statements UI page + statement history list
