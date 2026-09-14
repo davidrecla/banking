@@ -10,7 +10,8 @@
 
 ## Quick Orientation (read this first)
 
-- **Live production URL:** https://banking.davidrecla.workers.dev
+- **Live production URLs:** https://banking.puregroundscoffee.com (custom domain, declared as a `[[routes]]` entry in `wrangler.toml`) and https://banking.davidrecla.workers.dev (kept live alongside it)
+- **Page routing:** `/` is the public marketing homepage, `/login` is the login form, `/dashboard` and `/uploads` are the authenticated pages. Note `/` was the login page until the homepage was added — `app.js` redirects unauthenticated/logged-out users to `/login`, not `/`.
 - **GitHub repo:** `davidrecla/banking` (branch `main` = production, auto-deploys via Cloudflare Workers Builds on every push)
 - **Cloudflare Worker name:** `banking`, account "Pure Grounds Coffee Co." (account ID `0feb844d7ff36330cdd00ed24797fe85`)
 - **Workflow:** create a feature branch → commit/push → open a PR → Cloudflare posts a preview URL on the PR check → review → merge PR into `main` → Cloudflare auto-deploys to production. Do **not** push directly to `main` for non-trivial changes.
@@ -31,7 +32,8 @@ banking/
 │       ├── transfers.js       # POST /api/transfers/internal
 │       └── uploads.js         # upload/list/download/delete handlers (R2 + D1 metadata)
 ├── public/                    # Static UI, served automatically by Workers Assets (see [assets] in wrangler.toml)
-│   ├── index.html              # Login page
+│   ├── index.html              # Public marketing homepage (served at /)
+│   ├── login.html              # Login page (served at /login)
 │   ├── dashboard.html          # Balances + internal transfer form
 │   ├── uploads.html            # Documents/file upload page
 │   ├── app.js                  # Shared client helpers: auth token storage, authFetch(), toasts, formatCurrency()
@@ -210,11 +212,13 @@ GET  /api/usage                     — Phase 3
 
 ## UI Design (Phase 1, implemented)
 
-Redesigned to look like a real bank (originally had a generic Cloudflare-purple gradient look, replaced per instruction). Templated loosely after DBS Bank's site (https://www.dbs.com.sg), using DBS's official brand colors:
-- Red: `#FF3333` (primary CTA color, accents)
+Redesigned to look like a real bank (originally had a generic Cloudflare-purple gradient look, replaced per instruction). Templated loosely after DBS Bank's site (https://www.dbs.com.sg):
+- Red: `#d81f1f` (primary CTA color, accents). **Was `#FF3333`, changed because that value reads as orange rather than red.** Do not reintroduce `#FF3333`.
 - Black: `#000000` (top nav, headers)
 - White: `#FFFFFF` (page background/cards)
 - Gray `#484848` for secondary text
+
+**The palette is centralized and must stay that way.** All colors are CSS custom properties in the single `:root` block at the top of `public/styles.css` (`--dbs-red`, `--dbs-red-dark`, `--dbs-red-focus`, `--dbs-red-tint`, `--dbs-black`, `--dbs-gray`, `--dbs-gray-light`, `--dbs-border`), and that one stylesheet serves every page. Inline SVG icons use `fill="currentColor"`/`stroke="currentColor"` and inherit the red from CSS (`.icon-badge`/`.hero-art` set `color: var(--dbs-red)`) — **do not hardcode hex colors in markup or SVG attributes**, or a future brand-color change stops being a one-line edit.
 
 Design conventions used (see `public/styles.css`, CSS variables at the top):
 - Black top nav bar with a red bottom border accent
@@ -223,7 +227,9 @@ Design conventions used (see `public/styles.css`, CSS variables at the top):
 - No emoji icons anywhere (previously had 🏦💰💳 etc. — removed for a more professional/bank-like look)
 - No demo credentials displayed on the login page (removed — they live only in this file now)
 
-Pages: `index.html` (login), `dashboard.html` (balances + internal transfer form; other quick-action buttons for bills/loans/invest are visible but disabled with "Coming in Phase 2" tooltips), `uploads.html` (Documents page: upload/list/download/delete files).
+Pages: `index.html` (public marketing homepage at `/`), `login.html` (login form at `/login`), `dashboard.html` (balances + internal transfer form; other quick-action buttons for bills/loans/invest are visible but disabled with "Coming in Phase 2" tooltips), `uploads.html` (Documents page: upload/list/download/delete files).
+
+The homepage is modeled loosely on Metrobank's homepage (https://www.metrobank.com.ph/home): hero with CTA, a row of quick-action tiles, a feature-highlights section, and a footer. **Its nav/tile/footer links other than "Login" are deliberately inert** (`onclick="return false;"`) because the features behind them don't exist yet — wire them to real pages as those get built in Phase 2/3. The Login links (top nav, hero CTA, footer) point at `/login`.
 
 `public/app.js` has shared helpers used by all pages: `getToken()`/`setSession()`/`getUser()`/`clearSession()` (localStorage-based), `requireAuth()` (redirects to `/` if not logged in), `authFetch()` (fetch wrapper that auto-attaches the Bearer token and redirects to login on 401), `formatCurrency()`, `showToast()`.
 
@@ -271,6 +277,13 @@ Pages: `index.html` (login), `dashboard.html` (balances + internal transfer form
 - [x] Basic UI (login, dashboard, documents pages), DBS-inspired redesign, no demo creds shown in UI
 - [x] Merged via PR #3 into `main`; verified live at https://banking.davidrecla.workers.dev
 
+### Phase 1.5 — Public homepage + custom domain — ✅ COMPLETE
+- [x] Public marketing homepage at `/` (`public/index.html`), Metrobank-inspired structure, DBS-style theme
+- [x] Login form moved to `/login` (`public/login.html`); `app.js` redirects (`requireAuth()`, `authFetch()` 401 handler, `logout()`) updated to `/login`
+- [x] Brand red changed `#FF3333` -> `#d81f1f`; palette fully centralized in `:root`, SVGs switched to `currentColor`
+- [x] Merged via PR #4 into `main`
+- [x] Custom domain `banking.puregroundscoffee.com` declared in `wrangler.toml` as a `[[routes]]` entry with `custom_domain = true`
+
 ### Phase 2 — Extended Banking Features (START HERE NEXT)
 - [ ] D1 schema additions: `bills`, `payees`, `loans`, `investments` (add a new `schema/002_phase2.sql` file for reference, apply via individual `--command` calls per the network workaround below — do not assume `--file` works)
 - [ ] Bill payment endpoints (`src/routes/bills.js`) + UI page (`public/bills.html`, follow the pattern of `uploads.html`)
@@ -300,13 +313,14 @@ Pages: `index.html` (login), `dashboard.html` (balances + internal transfer form
 
 ### Phase 5 — Optional Stretch
 - [ ] mTLS protection for `/api/internal/*` routes
-- [ ] Custom domain setup (`banking.puregroundscoffee.com`)
+- [x] Custom domain setup (`banking.puregroundscoffee.com`) — done early, see Phase 1.5
 - [ ] Configure API Shield in Cloudflare dashboard: upload OpenAPI schema, enable BOLA/rate-limit/JWT validation features, run attack simulations end-to-end
 
 ---
 
 ## Current Cloudflare Resources Already Provisioned
-- Worker: `banking` — production at `banking.davidrecla.workers.dev`, GitHub-connected via Workers Builds, production branch `main`. Non-production branches also auto-build and get their own preview URL (format: `https://{version-id-prefix}-banking.davidrecla.workers.dev`, findable via `wrangler versions list` or the "Checks" tab on a GitHub PR).
+- Worker: `banking` — production at `banking.puregroundscoffee.com` (custom domain) and `banking.davidrecla.workers.dev`, GitHub-connected via Workers Builds, production branch `main`.
+- Zone: `puregroundscoffee.com` is an active zone in this same Cloudflare account, which is what makes the custom domain possible. The `[[routes]]` entry with `custom_domain = true` creates the DNS record and TLS cert automatically on deploy. Non-production branches also auto-build and get their own preview URL (format: `https://{version-id-prefix}-banking.davidrecla.workers.dev`, findable via `wrangler versions list` or the "Checks" tab on a GitHub PR).
 - D1: `bank-database` (id `6f12dd90-3093-4b25-adcb-a0e43ece88ac`), binding `BANK_DB` — schema applied (`users`, `accounts`, `transactions`, `uploads`), seeded with 5 demo users + 15 accounts.
 - KV: `BANK_KV` (id `fa8bcc19366b4f68ac9c3ff6ebf54a0b`) — rate-limit counters.
 - R2: `bank-bucket`, binding `BANK_BUCKET` — user uploads (Phase 1); will also store generated statements (Phase 3).
