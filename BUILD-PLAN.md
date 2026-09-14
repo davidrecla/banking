@@ -532,9 +532,11 @@ Delivered as three PRs: #14 statements + schema + lockfile, #15 cards + enforced
 
 7. **A lockfile is now committed.** `package-lock.json` is tracked, so CI installs a pinned graph and the deployed artifact is reproducible. `npm audit` reports 0 vulnerabilities.
 
-### Phase 4 — Security Showcase Layer (START HERE NEXT)
-- [ ] Implement the 9 intentional vulnerabilities from the OWASP mapping table above, on clearly separate/isolated endpoints (API10 was dropped during design — see the table header)
-- [ ] Add the `role` claim to JWTs at login (unlocks the API5 and API1 layered blocks)
+### Phase 4 — Security Showcase Layer (IN PROGRESS)
+- [x] Vulnerable endpoints live in `src/routes/vulnerable.js` and are routed in `src/index.js` — all deliberately isolated under their own paths so the legitimate API surface is untouched. Verified live with `wrangler dev --remote`: every exploit succeeds (debug dump, BOLA enumeration, `?internal=1`, rapid express transfers, BFLA list + force-approve incl. a $3000 payout, SSRF fetch + body exfiltration, stack-trace leak incl. server file paths, shadow `v1/accounts`). API8's demo target is `POST /api/debug/parse` (isolated) instead of `/api/auth/login`, so the real login endpoint stays clean.
+- [x] `role` claim at login — **already present** since Phase 1 (`{ sub, username, role }`), no change needed; the JWT validation claims rules for API5/API1 work against today's tokens
+- Two new audit event types come from the vulnerable actions: `transfer_express` and `loan_force_approve` (Phase 3 note 3's list is the legitimate set)
+- **Post-endpoint-build test state in D1:** chris.brown has one approved $3000 loan (applied pending_review, then force-approved via the API5b endpoint during verification) and sent $3 to sarah.johnson via express transfers. The ledger invariant still holds. These are intentional demo props — the attack script can create fresh ones, so re-running the "before" leg does not depend on this specific loan
 - [ ] Verify WAF/content-scanning test surfaces work as intended
 - [ ] Write `openapi-schema.yaml` (OpenAPI 3.0) covering all **legitimate** endpoints only — deliberately exclude the shadow `/api/v1` endpoint so it shows up as a "shadow API" in API Discovery
 - [ ] `test-api.sh` — happy-path validation script for all real endpoints

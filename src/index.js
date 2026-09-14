@@ -11,6 +11,9 @@ import { handleGenerateStatement, handleGetStatements, handleDownloadStatement }
 import { handleGetNotifications, handleMarkNotificationRead, handleMarkAllNotificationsRead } from './routes/notifications.js';
 import { handleGetAuditLog } from './routes/audit.js';
 import { handleUploadFile, handleListUploads, handleDownloadUpload, handleDeleteUpload } from './routes/uploads.js';
+// Intentionally vulnerable Phase 4 showcase endpoints — see src/routes/vulnerable.js
+// header for why these exist and must not be "fixed".
+import { handleGetUserBalance, handleInternalDebug, handleGetProfile, handleExpressTransfer, handleAdminListUsers, handleAdminForceApproveLoan, handleAvatarFromUrl, handleDebugParse, handleV1Accounts } from './routes/vulnerable.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -39,6 +42,9 @@ export default {
       if (pathname === '/api/auth/login' && method === 'POST') return await handleLogin(request, env);
       if (pathname === '/api/auth/refresh' && method === 'POST') return await handleRefresh(request, env);
       if (pathname === '/api/auth/logout' && method === 'POST') return await handleLogout(request, env);
+
+      // API2 demo endpoint: deliberately unauthenticated (see vulnerable.js).
+      if (pathname === '/api/internal/debug' && method === 'GET') return await handleInternalDebug(env);
 
       // --- Protected routes (require valid JWT) ---
       const auth = await authenticate(request, env);
@@ -123,6 +129,21 @@ export default {
       const uploadMatch = pathname.match(/^\/api\/uploads\/([^/]+)$/);
       if (uploadMatch && method === 'GET') return await handleDownloadUpload(request, env, auth, uploadMatch[1]);
       if (uploadMatch && method === 'DELETE') return await handleDeleteUpload(request, env, auth, uploadMatch[1]);
+
+      // --- Phase 4 intentionally vulnerable showcase endpoints ---
+
+      if (pathname === '/api/profile' && method === 'GET') return await handleGetProfile(request, env, auth);
+      if (pathname === '/api/profile/avatar-from-url' && method === 'POST') return await handleAvatarFromUrl(request, env, auth);
+      if (pathname === '/api/transfers/express' && method === 'POST') return await handleExpressTransfer(request, env, auth);
+      if (pathname === '/api/admin/users' && method === 'GET') return await handleAdminListUsers(request, env, auth);
+      if (pathname === '/api/debug/parse' && method === 'POST') return await handleDebugParse(request, env, auth);
+      if (pathname === '/api/v1/accounts' && method === 'GET') return await handleV1Accounts(request, env, auth);
+
+      const userBalanceMatch = pathname.match(/^\/api\/users\/([^/]+)\/balance$/);
+      if (userBalanceMatch && method === 'GET') return await handleGetUserBalance(request, env, auth, userBalanceMatch[1]);
+
+      const forceApproveMatch = pathname.match(/^\/api\/admin\/loans\/([^/]+)\/force-approve$/);
+      if (forceApproveMatch && method === 'POST') return await handleAdminForceApproveLoan(request, env, auth, forceApproveMatch[1]);
 
       return errorResponse('Not found', 404);
     } catch (err) {
