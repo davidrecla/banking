@@ -189,6 +189,7 @@ if [ "$code" = "201" ]; then
   verdict "EICAR upload" yes "test-malware file accepted and stored"
   status "/api/uploads/$EICAR_ID" -X DELETE >/dev/null; echo "           (object deleted afterwards — bucket stays clean)"
 elif [ "$code" = "403" ]; then verdict "EICAR upload" no "$code (malicious uploads detection)"
+elif [ "$code" = "302" ]; then BLOCKED=$((BLOCKED+1)); echo "CLIENT-BLOCKED EICAR upload (302 to a Cloudflare Gateway block page — the demo machine's own network proxy intercepted it before it left the machine; demo content scanning from a clean network or device instead)"
 else verdict "EICAR upload" odd "$code"; fi
 rm -f "$EICAR_FILE"
 echo
