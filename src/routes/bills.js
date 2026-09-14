@@ -53,8 +53,13 @@ export async function handleDeletePayee(request, env, auth, payeeId) {
   if (!payee) return errorResponse('Payee not found', 404);
 
   // Paid bills keep their own payee_name/account_number copies, so removing a
-  // payee does not rewrite payment history.
-  await env.BANK_DB.prepare('DELETE FROM payees WHERE id = ?').bind(payeeId).run();
+  // payee does not rewrite payment history — but bills.payee_id is a foreign
+  // key into payees, so referencing rows must be detached (set NULL, the same
+  // value one-off payments use) before the payee row can go away.
+  await env.BANK_DB.batch([
+    env.BANK_DB.prepare('UPDATE bills SET payee_id = NULL WHERE payee_id = ?').bind(payeeId),
+    env.BANK_DB.prepare('DELETE FROM payees WHERE id = ?').bind(payeeId)
+  ]);
 
   return jsonResponse({ message: 'Payee deleted' });
 }
