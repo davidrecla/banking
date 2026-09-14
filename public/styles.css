@@ -144,6 +144,68 @@ button {
 }
 .file-row:last-child { border-bottom: none; }
 
+/* ---- Transactions page ---- */
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px 16px;
+}
+.filter-actions { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+.btn-inline { width: auto !important; margin-top: 0 !important; }
+
+.result-summary { font-size: 13px; color: var(--dbs-gray); margin-bottom: 12px; }
+
+.txn-table-wrap { overflow-x: auto; }
+.txn-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.txn-table th, .txn-table td {
+  text-align: left;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--dbs-border);
+  white-space: nowrap;
+}
+.txn-table th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dbs-gray);
+  border-bottom: 2px solid var(--dbs-red);
+}
+.txn-table tbody tr:hover { background: var(--dbs-gray-light); }
+.txn-table td { text-transform: capitalize; }
+.align-right { text-align: right !important; }
+
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--dbs-red); }
+th.sort-asc::after { content: " \2191"; color: var(--dbs-red); }
+th.sort-desc::after { content: " \2193"; color: var(--dbs-red); }
+
+.amount-credit { color: #1a7f37; font-weight: 600; }
+.amount-debit { color: var(--dbs-black); font-weight: 600; }
+
+.status-pill {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.status-completed { background: rgba(26, 127, 55, 0.12); color: #1a7f37; }
+.status-pending { background: rgba(180, 120, 0, 0.14); color: #8a5a00; }
+.status-failed { background: var(--dbs-red-tint); color: var(--dbs-red-dark); }
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 18px;
+  font-size: 13px;
+  color: var(--dbs-gray);
+}
+.pagination-bar button:disabled { color: #bbb; cursor: not-allowed; }
+
 .toast {
   position: fixed;
   bottom: 24px;

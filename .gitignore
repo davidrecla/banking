@@ -148,3 +148,9 @@ vite.config.ts.timestamp-*
 # Generated seed/update command scripts (contain computed password hashes; regenerate via scripts/generate-seed.mjs or scripts/update-passwords.mjs)
 scripts/seed-commands.ps1
 scripts/update-passwords-commands.ps1
+
+# Phase 2 generated scripts + the D1 query dump they are built from
+# (regenerate via scripts/generate-phase2-schema.mjs / generate-transactions.mjs)
+scripts/phase2-schema.ps1
+scripts/transactions-seed.ps1
+scripts/accounts.json

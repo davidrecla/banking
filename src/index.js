@@ -2,6 +2,7 @@ import { authenticate, errorResponse } from './lib/auth.js';
 import { handleLogin, handleRefresh, handleLogout } from './routes/auth.js';
 import { handleGetAccounts, handleGetAccount } from './routes/accounts.js';
 import { handleInternalTransfer } from './routes/transfers.js';
+import { handleGetTransactions, handleGetTransaction } from './routes/transactions.js';
 import { handleUploadFile, handleListUploads, handleDownloadUpload, handleDeleteUpload } from './routes/uploads.js';
 
 const CORS_HEADERS = {
@@ -42,6 +43,11 @@ export default {
       if (accountMatch && method === 'GET') return await handleGetAccount(request, env, auth, accountMatch[1]);
 
       if (pathname === '/api/transfers/internal' && method === 'POST') return await handleInternalTransfer(request, env, auth);
+
+      if (pathname === '/api/transactions' && method === 'GET') return await handleGetTransactions(request, env, auth);
+
+      const transactionMatch = pathname.match(/^\/api\/transactions\/([^/]+)$/);
+      if (transactionMatch && method === 'GET') return await handleGetTransaction(request, env, auth, transactionMatch[1]);
 
       if (pathname === '/api/uploads' && method === 'POST') return await handleUploadFile(request, env, auth);
       if (pathname === '/api/uploads' && method === 'GET') return await handleListUploads(request, env, auth);

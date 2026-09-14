@@ -11,6 +11,7 @@
   <div class="top-nav">
     <div><strong>PGC <span class="brand-mark">BANK</span></strong> — <span id="welcome-msg"></span></div>
     <div>
+      <a href="/transactions" style="margin-right:16px;">Transactions</a>
       <a href="/uploads" style="margin-right:16px;">Documents</a>
       <button class="btn-danger" id="logout-btn">Logout</button>
     </div>
@@ -59,7 +60,8 @@
 
   <div class="section-card">
     <h3>Recent Transactions</h3>
-    <p style="color:#6b7280;">Full transaction history and filtering coming in Phase 2.</p>
+    <div id="recent-txns">Loading...</div>
+    <p style="margin-bottom:0;"><a href="/transactions">View all transactions &rarr;</a></p>
   </div>
 </div>
 
@@ -90,6 +92,32 @@
     fromSelect.innerHTML = accountsCache.map(acc =>
       `<option value="${acc.id}">${acc.account_type} (${formatCurrency(acc.balance)})</option>`
     ).join('');
+  }
+
+  async function loadRecentTransactions() {
+    const el = document.getElementById('recent-txns');
+    const res = await authFetch('/api/transactions?limit=5');
+    const data = await res.json();
+
+    if (!res.ok || !data.transactions.length) {
+      el.innerHTML = '<p style="color:var(--dbs-gray);">No transactions yet.</p>';
+      return;
+    }
+
+    const credits = ['deposit', 'transfer_in'];
+    el.innerHTML = data.transactions.map(t => `
+      <div class="file-row">
+        <div>
+          <strong>${t.merchant || t.type.replace(/_/g, ' ')}</strong>
+          <div style="font-size:12px;color:var(--dbs-gray);">
+            ${t.category || t.type.replace(/_/g, ' ')} &middot; ${new Date(t.created_at).toLocaleDateString()}
+          </div>
+        </div>
+        <div class="${credits.includes(t.type) ? 'amount-credit' : 'amount-debit'}">
+          ${credits.includes(t.type) ? '+' : '-'}${formatCurrency(t.amount)}
+        </div>
+      </div>
+    `).join('');
   }
 
   document.getElementById('transfer-toggle-btn').addEventListener('click', () => {
@@ -124,12 +152,14 @@
       showToast('Transfer completed!');
       document.getElementById('transfer-form').reset();
       loadAccounts();
+      loadRecentTransactions();
     } catch (err) {
       errorEl.textContent = 'Network error. Please try again.';
     }
   });
 
   loadAccounts();
+  loadRecentTransactions();
 </script>
 </body>
 </html>
