@@ -4,6 +4,8 @@ import { handleGetAccounts, handleGetAccount } from './routes/accounts.js';
 import { handleInternalTransfer } from './routes/transfers.js';
 import { handleGetTransactions, handleGetTransaction } from './routes/transactions.js';
 import { handleGetPayees, handleCreatePayee, handleDeletePayee, handlePayBill, handleGetBills } from './routes/bills.js';
+import { handleApplyForLoan, handleGetLoans, handleGetLoan } from './routes/loans.js';
+import { handleGetPlans, handleCreateInvestment, handleGetInvestments, handleWithdrawInvestment } from './routes/investments.js';
 import { handleUploadFile, handleListUploads, handleDownloadUpload, handleDeleteUpload } from './routes/uploads.js';
 
 const CORS_HEADERS = {
@@ -60,6 +62,21 @@ export default {
 
       if (pathname === '/api/bills/pay' && method === 'POST') return await handlePayBill(request, env, auth);
       if (pathname === '/api/bills' && method === 'GET') return await handleGetBills(request, env, auth);
+
+      if (pathname === '/api/loans/apply' && method === 'POST') return await handleApplyForLoan(request, env, auth);
+      if (pathname === '/api/loans' && method === 'GET') return await handleGetLoans(request, env, auth);
+
+      const loanMatch = pathname.match(/^\/api\/loans\/([^/]+)$/);
+      if (loanMatch && loanMatch[1] !== 'apply' && method === 'GET') return await handleGetLoan(request, env, auth, loanMatch[1]);
+
+      // Plans are matched before the generic collection routes so "plans" is
+      // never treated as an investment id.
+      if (pathname === '/api/investments/plans' && method === 'GET') return await handleGetPlans(request, env, auth);
+      if (pathname === '/api/investments' && method === 'POST') return await handleCreateInvestment(request, env, auth);
+      if (pathname === '/api/investments' && method === 'GET') return await handleGetInvestments(request, env, auth);
+
+      const withdrawMatch = pathname.match(/^\/api\/investments\/([^/]+)\/withdraw$/);
+      if (withdrawMatch && method === 'POST') return await handleWithdrawInvestment(request, env, auth, withdrawMatch[1]);
 
       if (pathname === '/api/uploads' && method === 'POST') return await handleUploadFile(request, env, auth);
       if (pathname === '/api/uploads' && method === 'GET') return await handleListUploads(request, env, auth);

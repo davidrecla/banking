@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - Investments</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="top-nav">
+    <div><strong>PGC <span class="brand-mark">BANK</span></strong> &mdash; Investments</div>
+    <div>
+      <a href="/dashboard" style="margin-right:16px;">Dashboard</a>
+      <a href="/transactions" style="margin-right:16px;">Transactions</a>
+      <button class="btn-danger" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>Available Plans</h3>
+    <div class="plan-grid" id="plan-grid">Loading plans...</div>
+  </div>
+
+  <div class="section-card">
+    <h3>Invest</h3>
+    <form id="invest-form">
+      <div class="filter-grid">
+        <div>
+          <label for="i-plan">Plan</label>
+          <select id="i-plan" required></select>
+        </div>
+        <div>
+          <label for="i-duration">Duration</label>
+          <select id="i-duration" required></select>
+        </div>
+        <div>
+          <label for="i-amount">Amount ($100 &ndash; $5,000)</label>
+          <input id="i-amount" type="number" min="100" max="5000" step="50" value="1000" required />
+        </div>
+        <div>
+          <label for="i-account">Fund From</label>
+          <select id="i-account" required></select>
+        </div>
+      </div>
+
+      <div class="calc-panel">
+        <div class="calc-item">
+          <span class="calc-label">Projected Rate</span>
+          <span class="calc-value" id="calc-rate">&mdash;</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Projected Value</span>
+          <span class="calc-value amount-credit" id="calc-value">&mdash;</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Projected Gain</span>
+          <span class="calc-value amount-credit" id="calc-gain">&mdash;</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Matures</span>
+          <span class="calc-value" id="calc-maturity">&mdash;</span>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary">Confirm Investment</button>
+      <div id="invest-error" class="error-text"></div>
+    </form>
+  </div>
+
+  <div class="section-card">
+    <h3>Your Holdings</h3>
+    <div id="holdings-list">Loading...</div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  let plansCache = [];
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  // Must stay in sync with projectedReturnFor() in src/routes/investments.js.
+  function projectedReturnFor(amount, durationMonths, annualRatePct) {
+    const gain = amount * (annualRatePct / 100) * (durationMonths / 12);
+    return Math.round((amount + gain) * 100) / 100;
+  }
+
+  function currentPlan() {
+    return plansCache.find((p) => p.planType === document.getElementById('i-plan').value);
+  }
+
+  function renderPlanCards() {
+    document.getElementById('plan-grid').innerHTML = plansCache.map((p) => `
+      <div class="plan-card">
+        <div class="plan-name">${escapeHtml(p.name)}</div>
+        <div class="plan-rate">${p.annualRate}%<span class="plan-rate-suffix"> p.a.</span></div>
+        <div class="plan-risk risk-${p.risk.toLowerCase()}">${p.risk} risk</div>
+        <p class="plan-desc">${escapeHtml(p.description)}</p>
+        <div class="plan-terms">Terms: ${p.durations.join(', ')} months</div>
+      </div>
+    `).join('');
+  }
+
+  function populateDurations() {
+    const plan = currentPlan();
+    if (!plan) return;
+    document.getElementById('i-duration').innerHTML = plan.durations
+      .map((d) => `<option value="${d}">${d} months</option>`)
+      .join('');
+  }
+
+  function updateCalculator() {
+    const plan = currentPlan();
+    const amount = parseFloat(document.getElementById('i-amount').value);
+    const duration = parseInt(document.getElementById('i-duration').value, 10);
+
+    if (!plan || !amount || !duration || amount <= 0) {
+      ['calc-rate', 'calc-value', 'calc-gain', 'calc-maturity'].forEach((id) => {
+        document.getElementById(id).textContent = '\u2014';
+      });
+      return;
+    }
+
+    const projected = projectedReturnFor(amount, duration, plan.annualRate);
+    const maturity = new Date();
+    maturity.setMonth(maturity.getMonth() + duration);
+
+    document.getElementById('calc-rate').textContent = `${plan.annualRate}% p.a.`;
+    document.getElementById('calc-value').textContent = formatCurrency(projected);
+    document.getElementById('calc-gain').textContent = `+${formatCurrency(projected - amount)}`;
+    document.getElementById('calc-maturity').textContent = maturity.toLocaleDateString();
+  }
+
+  async function loadPlans() {
+    const res = await authFetch('/api/investments/plans');
+    const data = await res.json();
+    plansCache = data.plans;
+
+    document.getElementById('i-plan').innerHTML = plansCache
+      .map((p) => `<option value="${p.planType}">${escapeHtml(p.name)} (${p.annualRate}%)</option>`)
+      .join('');
+
+    renderPlanCards();
+    populateDurations();
+    updateCalculator();
+  }
+
+  async function loadAccounts() {
+    const res = await authFetch('/api/accounts');
+    const data = await res.json();
+    document.getElementById('i-account').innerHTML = data.accounts
+      .map((a) => `<option value="${a.id}">${a.account_type} (${formatCurrency(a.balance)})</option>`)
+      .join('');
+  }
+
+  async function loadHoldings() {
+    const res = await authFetch('/api/investments');
+    const data = await res.json();
+    const listEl = document.getElementById('holdings-list');
+
+    if (!data.investments.length) {
+      listEl.innerHTML = '<p style="color:var(--dbs-gray);">No investments yet.</p>';
+      return;
+    }
+
+    listEl.innerHTML = data.investments.map((i) => {
+      const matured = new Date() >= new Date(i.maturity_date);
+      const isActive = i.status === 'active';
+      return `
+        <div class="file-row">
+          <div>
+            <strong>${escapeHtml(i.plan_name)}</strong>
+            <span class="status-pill status-${isActive ? 'completed' : 'pending'}" style="margin-left:8px;">
+              ${i.status}
+            </span>
+            <div style="font-size:12px;color:var(--dbs-gray);">
+              ${formatCurrency(i.amount)} &middot; ${i.duration_months} months @ ${i.annual_rate}% &middot;
+              matures ${new Date(i.maturity_date).toLocaleDateString()}
+              ${matured && isActive ? ' &middot; <strong>matured</strong>' : ''}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="amount-credit">${formatCurrency(i.projected_return)}</div>
+            ${isActive
+              ? `<button class="btn-secondary" style="margin-top:6px;" onclick="withdraw('${i.id}', ${matured})">Withdraw</button>`
+              : ''}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  async function withdraw(id, matured) {
+    if (!matured && !confirm('This investment has not matured. Withdrawing now returns your principal only and forfeits projected gains. Continue?')) {
+      return;
+    }
+    const res = await authFetch(`/api/investments/${id}/withdraw`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Withdrawal failed', true);
+      return;
+    }
+    showToast(`${data.message} (${formatCurrency(data.payout)})`);
+    loadAccounts();
+    loadHoldings();
+  }
+
+  document.getElementById('i-plan').addEventListener('change', () => {
+    populateDurations();
+    updateCalculator();
+  });
+  document.getElementById('i-duration').addEventListener('change', updateCalculator);
+  document.getElementById('i-amount').addEventListener('input', updateCalculator);
+
+  document.getElementById('invest-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('invest-error');
+    errorEl.textContent = '';
+
+    const body = {
+      fromAccountId: document.getElementById('i-account').value,
+      planType: document.getElementById('i-plan').value,
+      amount: parseFloat(document.getElementById('i-amount').value),
+      durationMonths: parseInt(document.getElementById('i-duration').value, 10)
+    };
+
+    try {
+      const res = await authFetch('/api/investments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Investment failed';
+        return;
+      }
+      showToast('Investment created');
+      loadAccounts();
+      loadHoldings();
+    } catch (err) {
+      errorEl.textContent = 'Network error. Please try again.';
+    }
+  });
+
+  loadPlans();
+  loadAccounts();
+  loadHoldings();
+</script>
+</body>
+</html>

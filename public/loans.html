@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - Loans</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="top-nav">
+    <div><strong>PGC <span class="brand-mark">BANK</span></strong> &mdash; Loans</div>
+    <div>
+      <a href="/dashboard" style="margin-right:16px;">Dashboard</a>
+      <a href="/transactions" style="margin-right:16px;">Transactions</a>
+      <button class="btn-danger" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>Apply for a Loan</h3>
+    <form id="loan-form">
+      <div class="filter-grid">
+        <div>
+          <label for="l-amount">Amount ($500 &ndash; $10,000)</label>
+          <input id="l-amount" type="number" min="500" max="10000" step="50" value="1500" required />
+        </div>
+        <div>
+          <label for="l-term">Term</label>
+          <select id="l-term" required>
+            <option value="6">6 months</option>
+            <option value="12" selected>12 months</option>
+            <option value="24">24 months</option>
+            <option value="36">36 months</option>
+            <option value="48">48 months</option>
+            <option value="60">60 months</option>
+          </select>
+        </div>
+        <div>
+          <label for="l-account">Disburse To</label>
+          <select id="l-account" required></select>
+        </div>
+        <div>
+          <label for="l-employment">Employment Status</label>
+          <select id="l-employment">
+            <option value="">Prefer not to say</option>
+            <option value="employed">Employed</option>
+            <option value="self_employed">Self-employed</option>
+            <option value="contract">Contract</option>
+            <option value="retired">Retired</option>
+            <option value="student">Student</option>
+          </select>
+        </div>
+        <div>
+          <label for="l-income">Annual Income (optional)</label>
+          <input id="l-income" type="number" min="0" step="1000" placeholder="e.g. 65000" />
+        </div>
+        <div>
+          <label for="l-purpose">Purpose (optional)</label>
+          <input id="l-purpose" placeholder="e.g. Home renovation" />
+        </div>
+      </div>
+
+      <div class="calc-panel" id="calc-panel">
+        <div class="calc-item">
+          <span class="calc-label">Interest Rate</span>
+          <span class="calc-value" id="calc-rate">&mdash;</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Monthly Payment</span>
+          <span class="calc-value" id="calc-monthly">&mdash;</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Total Repayment</span>
+          <span class="calc-value" id="calc-total">&mdash;</span>
+        </div>
+        <div class="calc-item">
+          <span class="calc-label">Decision</span>
+          <span class="calc-value" id="calc-decision">&mdash;</span>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary">Submit Application</button>
+      <div id="loan-error" class="error-text"></div>
+    </form>
+  </div>
+
+  <div class="section-card">
+    <h3>Your Loans</h3>
+    <div id="loan-list">Loading...</div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  const AUTO_APPROVE_BELOW = 2000;
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  // Must stay in sync with interestRateFor() in src/routes/loans.js.
+  function interestRateFor(termMonths) {
+    if (termMonths <= 12) return 5.5;
+    if (termMonths <= 24) return 6.5;
+    if (termMonths <= 36) return 7.5;
+    if (termMonths <= 48) return 8.5;
+    return 9.5;
+  }
+
+  // Must stay in sync with monthlyPaymentFor() in src/routes/loans.js.
+  function monthlyPaymentFor(amount, termMonths, annualRatePct) {
+    const monthlyRate = annualRatePct / 100 / 12;
+    const payment =
+      (amount * monthlyRate * Math.pow(1 + monthlyRate, termMonths)) /
+      (Math.pow(1 + monthlyRate, termMonths) - 1);
+    return Math.round(payment * 100) / 100;
+  }
+
+  function updateCalculator() {
+    const amount = parseFloat(document.getElementById('l-amount').value);
+    const term = parseInt(document.getElementById('l-term').value, 10);
+
+    if (!amount || !term || amount <= 0) {
+      document.getElementById('calc-rate').textContent = '\u2014';
+      document.getElementById('calc-monthly').textContent = '\u2014';
+      document.getElementById('calc-total').textContent = '\u2014';
+      document.getElementById('calc-decision').textContent = '\u2014';
+      return;
+    }
+
+    const rate = interestRateFor(term);
+    const monthly = monthlyPaymentFor(amount, term, rate);
+
+    document.getElementById('calc-rate').textContent = `${rate}% p.a.`;
+    document.getElementById('calc-monthly').textContent = formatCurrency(monthly);
+    document.getElementById('calc-total').textContent = formatCurrency(monthly * term);
+
+    const decisionEl = document.getElementById('calc-decision');
+    if (amount < AUTO_APPROVE_BELOW) {
+      decisionEl.textContent = 'Instant approval';
+      decisionEl.className = 'calc-value amount-credit';
+    } else {
+      decisionEl.textContent = 'Manual review';
+      decisionEl.className = 'calc-value';
+    }
+  }
+
+  async function loadAccounts() {
+    const res = await authFetch('/api/accounts');
+    const data = await res.json();
+    document.getElementById('l-account').innerHTML = data.accounts
+      .map((a) => `<option value="${a.id}">${a.account_type} (${formatCurrency(a.balance)})</option>`)
+      .join('');
+  }
+
+  async function loadLoans() {
+    const res = await authFetch('/api/loans');
+    const data = await res.json();
+    const listEl = document.getElementById('loan-list');
+
+    if (!data.loans.length) {
+      listEl.innerHTML = '<p style="color:var(--dbs-gray);">No loan applications yet.</p>';
+      return;
+    }
+
+    listEl.innerHTML = data.loans.map((l) => `
+      <div class="file-row">
+        <div>
+          <strong>${formatCurrency(l.amount)}</strong> over ${l.term_months} months
+          <span class="status-pill status-${statusClass(l.status)}" style="margin-left:8px;">
+            ${l.status.replace(/_/g, ' ')}
+          </span>
+          <div style="font-size:12px;color:var(--dbs-gray);">
+            ${l.interest_rate}% p.a. &middot; ${formatCurrency(l.monthly_payment)}/mo &middot;
+            ${new Date(l.created_at).toLocaleDateString()}
+            ${l.purpose ? ' &middot; ' + escapeHtml(l.purpose) : ''}
+          </div>
+        </div>
+        <div style="text-align:right;font-size:12px;color:var(--dbs-gray);">
+          Total<br><strong style="font-size:14px;color:var(--dbs-black);">
+            ${formatCurrency(l.monthly_payment * l.term_months)}
+          </strong>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function statusClass(status) {
+    if (status === 'approved') return 'completed';
+    if (status === 'rejected') return 'failed';
+    return 'pending';
+  }
+
+  document.getElementById('l-amount').addEventListener('input', updateCalculator);
+  document.getElementById('l-term').addEventListener('change', updateCalculator);
+
+  document.getElementById('loan-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('loan-error');
+    errorEl.textContent = '';
+
+    const income = document.getElementById('l-income').value;
+    const body = {
+      amount: parseFloat(document.getElementById('l-amount').value),
+      termMonths: parseInt(document.getElementById('l-term').value, 10),
+      disburseAccountId: document.getElementById('l-account').value,
+      employmentStatus: document.getElementById('l-employment').value || undefined,
+      annualIncome: income ? parseFloat(income) : undefined,
+      purpose: document.getElementById('l-purpose').value.trim() || undefined
+    };
+
+    try {
+      const res = await authFetch('/api/loans/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Application failed';
+        return;
+      }
+      showToast(data.message);
+      loadAccounts();
+      loadLoans();
+    } catch (err) {
+      errorEl.textContent = 'Network error. Please try again.';
+    }
+  });
+
+  updateCalculator();
+  loadAccounts();
+  loadLoans();
+</script>
+</body>
+</html>

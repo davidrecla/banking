@@ -206,6 +206,59 @@ th.sort-desc::after { content: " \2193"; color: var(--dbs-red); }
 }
 .pagination-bar button:disabled { color: #bbb; cursor: not-allowed; }
 
+/* ---- Loan / investment calculators ---- */
+.calc-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin: 20px 0 4px;
+  padding: 16px 18px;
+  background: var(--dbs-gray-light);
+  border-left: 3px solid var(--dbs-red);
+  border-radius: 3px;
+}
+.calc-item { display: flex; flex-direction: column; gap: 4px; }
+.calc-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dbs-gray);
+}
+.calc-value { font-size: 18px; font-weight: 700; color: var(--dbs-black); }
+
+/* ---- Investment plan cards ---- */
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+.plan-card {
+  border: 1px solid var(--dbs-border);
+  border-top: 3px solid var(--dbs-red);
+  border-radius: 4px;
+  padding: 18px;
+  background: #fff;
+}
+.plan-name { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+.plan-rate { font-size: 26px; font-weight: 700; color: var(--dbs-red); line-height: 1.1; }
+.plan-rate-suffix { font-size: 13px; font-weight: 600; color: var(--dbs-gray); }
+.plan-risk {
+  display: inline-block;
+  margin: 8px 0;
+  padding: 3px 9px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.risk-low { background: rgba(26, 127, 55, 0.12); color: #1a7f37; }
+.risk-medium { background: rgba(180, 120, 0, 0.14); color: #8a5a00; }
+.risk-high { background: var(--dbs-red-tint); color: var(--dbs-red-dark); }
+.plan-desc { font-size: 13px; color: var(--dbs-gray); margin: 8px 0; }
+.plan-terms { font-size: 12px; color: var(--dbs-gray); border-top: 1px solid var(--dbs-border); padding-top: 10px; }
+
 .toast {
   position: fixed;
   bottom: 24px;
