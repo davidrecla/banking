@@ -6,11 +6,15 @@ compatibility_date = "2026-09-01"
 ENVIRONMENT = "production"
 
 # Custom domain. Declared here (rather than set up in the dashboard) so the
-# binding is tracked in the repo and reapplied on every deploy. The
-# banking.davidrecla.workers.dev URL keeps working alongside this.
+# binding is tracked in the repo and reapplied on every deploy.
 [[routes]]
 pattern = "banking.puregroundscoffee.com"
 custom_domain = true
+
+# Required: declaring any [[routes]] entry disables the workers.dev subdomain
+# by default, which 404s banking.davidrecla.workers.dev. Keep this true so both
+# hostnames serve the Worker.
+workers_dev = true
 
 [[kv_namespaces]]
 binding = "BANK_KV"
