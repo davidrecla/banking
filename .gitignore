@@ -149,8 +149,9 @@ vite.config.ts.timestamp-*
 scripts/seed-commands.ps1
 scripts/update-passwords-commands.ps1
 
-# Phase 2 generated scripts + the D1 query dump they are built from
-# (regenerate via scripts/generate-phase2-schema.mjs / generate-transactions.mjs)
+# Generated schema/seed scripts + the D1 query dump they are built from
+# (regenerate via scripts/generate-schema.mjs / generate-transactions.mjs)
 scripts/phase2-schema.ps1
+scripts/schema-*.ps1
 scripts/transactions-seed.ps1
 scripts/accounts.json
