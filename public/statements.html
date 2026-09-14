@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - Statements</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="top-nav">
+    <div><strong>PGC <span class="brand-mark">BANK</span></strong> &mdash; Statements</div>
+    <div>
+      <a href="/dashboard" style="margin-right:16px;">Dashboard</a>
+      <a href="/transactions" style="margin-right:16px;">Transactions</a>
+      <button class="btn-danger" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>Generate a Statement</h3>
+    <form id="stmt-form">
+      <div class="filter-grid">
+        <div>
+          <label for="s-account">Account</label>
+          <select id="s-account" required></select>
+        </div>
+        <div>
+          <label for="s-from">From</label>
+          <input id="s-from" type="date" required />
+        </div>
+        <div>
+          <label for="s-to">To</label>
+          <input id="s-to" type="date" required />
+        </div>
+        <div>
+          <label for="s-format">Format</label>
+          <select id="s-format" required>
+            <option value="pdf">PDF</option>
+            <option value="csv">CSV</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button type="submit" class="btn-primary btn-inline">Generate</button>
+        <button type="button" class="btn-secondary" id="preset-6m">Last 6 months</button>
+        <button type="button" class="btn-secondary" id="preset-month">This month</button>
+      </div>
+      <div id="stmt-error" class="error-text"></div>
+    </form>
+
+    <div class="calc-panel" id="last-summary" style="display:none;">
+      <div class="calc-item">
+        <span class="calc-label">Opening Balance</span>
+        <span class="calc-value" id="sum-opening">&mdash;</span>
+      </div>
+      <div class="calc-item">
+        <span class="calc-label">Credits</span>
+        <span class="calc-value amount-credit" id="sum-credits">&mdash;</span>
+      </div>
+      <div class="calc-item">
+        <span class="calc-label">Debits</span>
+        <span class="calc-value amount-debit" id="sum-debits">&mdash;</span>
+      </div>
+      <div class="calc-item">
+        <span class="calc-label">Net Change</span>
+        <span class="calc-value" id="sum-net">&mdash;</span>
+      </div>
+      <div class="calc-item">
+        <span class="calc-label">Closing Balance</span>
+        <span class="calc-value" id="sum-closing">&mdash;</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>Your Statements</h3>
+    <div id="stmt-list">Loading...</div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes) return '-';
+    if (bytes < 1024) return `${bytes} B`;
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  function isoDate(date) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  async function loadAccounts() {
+    const res = await authFetch('/api/accounts');
+    const data = await res.json();
+    document.getElementById('s-account').innerHTML = data.accounts
+      .map((a) => `<option value="${a.id}">${a.account_type} (${a.account_number})</option>`)
+      .join('');
+  }
+
+  async function loadStatements() {
+    const res = await authFetch('/api/statements');
+    const data = await res.json();
+    const listEl = document.getElementById('stmt-list');
+
+    if (!data.statements.length) {
+      listEl.innerHTML = '<p style="color:var(--dbs-gray);">No statements generated yet.</p>';
+      return;
+    }
+
+    listEl.innerHTML = data.statements.map((s) => `
+      <div class="file-row">
+        <div>
+          <strong>${s.date_range_start} to ${s.date_range_end}</strong>
+          <span class="status-pill status-completed" style="margin-left:8px;">${s.format}</span>
+          <div style="font-size:12px;color:var(--dbs-gray);text-transform:capitalize;">
+            ${s.account_type} ${escapeHtml(s.account_number)} &middot;
+            ${s.transaction_count} transactions &middot; ${formatBytes(s.size_bytes)} &middot;
+            generated ${new Date(s.created_at).toLocaleDateString()}
+          </div>
+        </div>
+        <button class="btn-secondary" onclick="download('${s.id}')">Download</button>
+      </div>
+    `).join('');
+  }
+
+  async function download(id) {
+    const res = await authFetch(`/api/statements/${id}/download`);
+    if (!res.ok) {
+      showToast('Download failed', true);
+      return;
+    }
+    // Read the filename the server suggested rather than inventing one.
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = match ? match[1] : 'statement';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  document.getElementById('preset-6m').addEventListener('click', () => {
+    const to = new Date();
+    const from = new Date();
+    from.setMonth(from.getMonth() - 6);
+    document.getElementById('s-from').value = isoDate(from);
+    document.getElementById('s-to').value = isoDate(to);
+  });
+
+  document.getElementById('preset-month').addEventListener('click', () => {
+    const now = new Date();
+    document.getElementById('s-from').value = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    document.getElementById('s-to').value = isoDate(now);
+  });
+
+  document.getElementById('stmt-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('stmt-error');
+    errorEl.textContent = '';
+
+    const body = {
+      accountId: document.getElementById('s-account').value,
+      from: document.getElementById('s-from').value,
+      to: document.getElementById('s-to').value,
+      format: document.getElementById('s-format').value
+    };
+
+    try {
+      const res = await authFetch('/api/statements/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Generation failed';
+        return;
+      }
+
+      const t = data.statement.totals;
+      document.getElementById('sum-opening').textContent = formatCurrency(t.openingBalance);
+      document.getElementById('sum-credits').textContent = `+${formatCurrency(t.credits)}`;
+      document.getElementById('sum-debits').textContent = `-${formatCurrency(t.debits)}`;
+      document.getElementById('sum-net').textContent = formatCurrency(t.net);
+      document.getElementById('sum-closing').textContent = formatCurrency(t.closingBalance);
+      document.getElementById('last-summary').style.display = 'grid';
+
+      showToast(`Statement generated (${data.statement.transactionCount} transactions)`);
+      loadStatements();
+    } catch (err) {
+      errorEl.textContent = 'Network error. Please try again.';
+    }
+  });
+
+  // Default to the last 6 months, which is the span the demo data covers.
+  document.getElementById('preset-6m').click();
+  loadAccounts();
+  loadStatements();
+</script>
+</body>
+</html>

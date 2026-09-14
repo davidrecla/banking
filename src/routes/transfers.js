@@ -1,5 +1,6 @@
 import { jsonResponse, errorResponse } from '../lib/auth.js';
 import { getDailyTransferTotal, addDailyTransferTotal } from '../lib/ratelimit.js';
+import { loadDebitableAccount } from '../lib/accounts.js';
 
 const MAX_PER_TRANSACTION = 500;
 const MAX_PER_DAY = 1000;
@@ -39,11 +40,9 @@ export async function handleInternalTransfer(request, env, auth) {
     return errorResponse(`Daily transfer limit of $${MAX_PER_DAY} would be exceeded`, 400);
   }
 
-  const fromAccount = await env.BANK_DB
-    .prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?')
-    .bind(fromAccountId, auth.sub)
-    .first();
-  if (!fromAccount) return errorResponse('Source account not found', 404);
+  const source = await loadDebitableAccount(env, auth, fromAccountId, 'Source account not found');
+  if (source.response) return source.response;
+  const fromAccount = source.account;
   if (fromAccount.balance < amount) return errorResponse('Insufficient funds', 400);
 
   const toUser = await env.BANK_DB.prepare('SELECT * FROM users WHERE username = ?').bind(toUsername).first();
@@ -115,11 +114,9 @@ export async function handleExternalTransfer(request, env, auth) {
     return errorResponse(`bankCode must be one of: ${EXTERNAL_BANKS.map((b) => b.code).join(', ')}`, 400);
   }
 
-  const account = await env.BANK_DB
-    .prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?')
-    .bind(fromAccountId, auth.sub)
-    .first();
-  if (!account) return errorResponse('Source account not found', 404);
+  const source = await loadDebitableAccount(env, auth, fromAccountId, 'Source account not found');
+  if (source.response) return source.response;
+  const account = source.account;
 
   const totalDebit = amount + EXTERNAL_FEE;
   if (account.balance < totalDebit) {
@@ -178,11 +175,9 @@ export async function handleBatchTransfer(request, env, auth) {
     return errorResponse(`A batch may contain at most ${BATCH_MAX_ITEMS} transfers`, 400);
   }
 
-  const account = await env.BANK_DB
-    .prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?')
-    .bind(fromAccountId, auth.sub)
-    .first();
-  if (!account) return errorResponse('Source account not found', 404);
+  const source = await loadDebitableAccount(env, auth, fromAccountId, 'Source account not found');
+  if (source.response) return source.response;
+  const account = source.account;
 
   // Validate every item before writing anything, so a bad entry halfway down
   // the list cannot leave a partially-applied batch.

@@ -12,6 +12,8 @@
     <div><strong>PGC <span class="brand-mark">BANK</span></strong> — <span id="welcome-msg"></span></div>
     <div>
       <a href="/transactions" style="margin-right:16px;">Transactions</a>
+      <a href="/statements" style="margin-right:16px;">Statements</a>
+      <a href="/cards" style="margin-right:16px;">Cards</a>
       <a href="/uploads" style="margin-right:16px;">Documents</a>
       <button class="btn-danger" id="logout-btn">Logout</button>
     </div>
@@ -83,7 +85,10 @@
     const grid = document.getElementById('balance-grid');
     grid.innerHTML = accountsCache.map(acc => `
       <div class="balance-card">
-        <div style="font-size:13px;font-weight:600;text-transform:uppercase;color:var(--dbs-gray, #484848);letter-spacing:0.5px;">${acc.account_type}</div>
+        <div style="font-size:13px;font-weight:600;text-transform:uppercase;color:var(--dbs-gray, #484848);letter-spacing:0.5px;">
+          ${acc.account_type}
+          ${acc.frozen ? '<span class="status-pill status-failed" style="margin-left:6px;">frozen</span>' : ''}
+        </div>
         <div class="balance-amount">${formatCurrency(acc.balance)}</div>
         <div style="font-size:12px;color:#9ca3af;">${acc.account_number}</div>
       </div>
