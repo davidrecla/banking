@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - Pay Bills</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="top-nav">
+    <div><strong>PGC <span class="brand-mark">BANK</span></strong> &mdash; Pay Bills</div>
+    <div>
+      <a href="/dashboard" style="margin-right:16px;">Dashboard</a>
+      <a href="/transactions" style="margin-right:16px;">Transactions</a>
+      <button class="btn-danger" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>Pay a Bill</h3>
+    <form id="pay-form">
+      <label for="p-account">Pay From</label>
+      <select id="p-account" required></select>
+
+      <label for="p-payee">Payee</label>
+      <select id="p-payee">
+        <option value="">-- One-off payment (enter details below) --</option>
+      </select>
+
+      <div id="oneoff-fields">
+        <label for="p-name">Payee Name</label>
+        <input id="p-name" placeholder="e.g. City Power &amp; Light" />
+
+        <label for="p-type">Bill Type</label>
+        <select id="p-type">
+          <option value="electricity">Electricity</option>
+          <option value="water">Water</option>
+          <option value="internet">Internet</option>
+          <option value="mobile">Mobile</option>
+          <option value="credit_card">Credit Card</option>
+          <option value="insurance">Insurance</option>
+        </select>
+
+        <label for="p-acctnum">Payee Account Number</label>
+        <input id="p-acctnum" placeholder="e.g. 8891234567" />
+      </div>
+
+      <label for="p-amount">Amount (max $2,000 per transaction)</label>
+      <input id="p-amount" type="number" min="0.01" max="2000" step="0.01" required />
+
+      <label for="p-due">Due Date (optional)</label>
+      <input id="p-due" type="date" />
+
+      <label for="p-memo">Memo (optional)</label>
+      <input id="p-memo" placeholder="e.g. September billing" />
+
+      <button type="submit" class="btn-primary">Pay Bill</button>
+      <div id="pay-error" class="error-text"></div>
+    </form>
+  </div>
+
+  <div class="section-card">
+    <h3>Saved Payees</h3>
+    <form id="payee-form">
+      <div class="filter-grid">
+        <div>
+          <label for="n-name">Name</label>
+          <input id="n-name" placeholder="e.g. Metro Water Works" required />
+        </div>
+        <div>
+          <label for="n-type">Bill Type</label>
+          <select id="n-type" required>
+            <option value="electricity">Electricity</option>
+            <option value="water">Water</option>
+            <option value="internet">Internet</option>
+            <option value="mobile">Mobile</option>
+            <option value="credit_card">Credit Card</option>
+            <option value="insurance">Insurance</option>
+          </select>
+        </div>
+        <div>
+          <label for="n-acctnum">Account Number</label>
+          <input id="n-acctnum" placeholder="e.g. 5567001234" required />
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button type="submit" class="btn-primary btn-inline">Add Payee</button>
+      </div>
+      <div id="payee-error" class="error-text"></div>
+    </form>
+    <div id="payee-list" style="margin-top:18px;">Loading...</div>
+  </div>
+
+  <div class="section-card">
+    <h3>Payment History</h3>
+    <div id="bill-list">Loading...</div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  let accountsCache = [];
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  function prettyType(type) {
+    return String(type).replace(/_/g, ' ');
+  }
+
+  async function loadAccounts() {
+    const res = await authFetch('/api/accounts');
+    const data = await res.json();
+    accountsCache = data.accounts;
+    document.getElementById('p-account').innerHTML = accountsCache
+      .map((a) => `<option value="${a.id}">${a.account_type} (${formatCurrency(a.balance)})</option>`)
+      .join('');
+  }
+
+  async function loadPayees() {
+    const res = await authFetch('/api/bills/payees');
+    const data = await res.json();
+
+    const select = document.getElementById('p-payee');
+    select.innerHTML =
+      '<option value="">-- One-off payment (enter details below) --</option>' +
+      data.payees
+        .map((p) => `<option value="${p.id}">${escapeHtml(p.name)} (${prettyType(p.bill_type)})</option>`)
+        .join('');
+
+    const listEl = document.getElementById('payee-list');
+    if (!data.payees.length) {
+      listEl.innerHTML = '<p style="color:var(--dbs-gray);">No saved payees yet.</p>';
+      return;
+    }
+    listEl.innerHTML = data.payees.map((p) => `
+      <div class="file-row">
+        <div>
+          <strong>${escapeHtml(p.name)}</strong>
+          <div style="font-size:12px;color:var(--dbs-gray);text-transform:capitalize;">
+            ${prettyType(p.bill_type)} &middot; ${escapeHtml(p.account_number)}
+          </div>
+        </div>
+        <button class="btn-danger" onclick="deletePayee('${p.id}')">Delete</button>
+      </div>
+    `).join('');
+  }
+
+  async function loadBills() {
+    const res = await authFetch('/api/bills');
+    const data = await res.json();
+    const listEl = document.getElementById('bill-list');
+
+    if (!data.bills.length) {
+      listEl.innerHTML = '<p style="color:var(--dbs-gray);">No bill payments yet.</p>';
+      return;
+    }
+
+    listEl.innerHTML = data.bills.map((b) => `
+      <div class="file-row">
+        <div>
+          <strong>${escapeHtml(b.payee_name)}</strong>
+          <span class="status-pill status-${b.status}" style="margin-left:8px;">${b.status}</span>
+          <div style="font-size:12px;color:var(--dbs-gray);text-transform:capitalize;">
+            ${prettyType(b.bill_type)} &middot; ${escapeHtml(b.confirmation_number)} &middot;
+            ${new Date(b.created_at).toLocaleDateString()} &middot; from ${b.account_type}
+          </div>
+        </div>
+        <div class="amount-debit">-${formatCurrency(b.amount)}</div>
+      </div>
+    `).join('');
+  }
+
+  async function deletePayee(id) {
+    await authFetch(`/api/bills/payees/${id}`, { method: 'DELETE' });
+    showToast('Payee deleted');
+    loadPayees();
+  }
+
+  // Hide the one-off fields when a saved payee is selected, since its details
+  // take precedence server-side anyway.
+  document.getElementById('p-payee').addEventListener('change', (e) => {
+    document.getElementById('oneoff-fields').style.display = e.target.value ? 'none' : 'block';
+  });
+
+  document.getElementById('payee-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('payee-error');
+    errorEl.textContent = '';
+
+    const body = {
+      name: document.getElementById('n-name').value.trim(),
+      billType: document.getElementById('n-type').value,
+      accountNumber: document.getElementById('n-acctnum').value.trim()
+    };
+
+    try {
+      const res = await authFetch('/api/bills/payees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Could not add payee';
+        return;
+      }
+      showToast('Payee added');
+      document.getElementById('payee-form').reset();
+      loadPayees();
+    } catch (err) {
+      errorEl.textContent = 'Network error. Please try again.';
+    }
+  });
+
+  document.getElementById('pay-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('pay-error');
+    errorEl.textContent = '';
+
+    const payeeId = document.getElementById('p-payee').value;
+    const body = {
+      fromAccountId: document.getElementById('p-account').value,
+      amount: parseFloat(document.getElementById('p-amount').value),
+      dueDate: document.getElementById('p-due').value || undefined,
+      memo: document.getElementById('p-memo').value.trim() || undefined
+    };
+
+    if (payeeId) {
+      body.payeeId = payeeId;
+    } else {
+      body.payeeName = document.getElementById('p-name').value.trim();
+      body.billType = document.getElementById('p-type').value;
+      body.accountNumber = document.getElementById('p-acctnum').value.trim();
+    }
+
+    try {
+      const res = await authFetch('/api/bills/pay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Payment failed';
+        return;
+      }
+      showToast(`Bill paid. Confirmation ${data.bill.confirmationNumber}`);
+      document.getElementById('pay-form').reset();
+      document.getElementById('oneoff-fields').style.display = 'block';
+      loadAccounts();
+      loadBills();
+    } catch (err) {
+      errorEl.textContent = 'Network error. Please try again.';
+    }
+  });
+
+  loadAccounts();
+  loadPayees();
+  loadBills();
+</script>
+</body>
+</html>
