@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { jsonResponse, errorResponse } from '../lib/auth.js';
+import { recordAudit } from '../lib/activity.js';
 
 // DBS-inspired brand red, matching --dbs-red in public/styles.css.
 const BRAND_RED = rgb(0.847, 0.122, 0.122);
@@ -120,6 +121,14 @@ export async function handleGenerateStatement(request, env, auth) {
     .prepare('INSERT INTO statements (id, user_id, account_id, format, date_range_start, date_range_end, transaction_count, r2_key, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(statementId, auth.sub, accountId, format, from, to, data.transactions.length, r2Key, bytes.length, now)
     .run();
+
+  await recordAudit(
+    env,
+    request,
+    auth.sub,
+    'statement_generate',
+    `Generated a ${format.toUpperCase()} statement for ${data.account.account_type} covering ${from} to ${to}`
+  );
 
   return jsonResponse({
     message: 'Statement generated',

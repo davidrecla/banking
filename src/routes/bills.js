@@ -1,5 +1,6 @@
 import { jsonResponse, errorResponse } from '../lib/auth.js';
 import { loadDebitableAccount } from '../lib/accounts.js';
+import { recordAndNotify } from '../lib/activity.js';
 
 const MAX_PER_TRANSACTION = 2000;
 
@@ -121,6 +122,19 @@ export async function handlePayBill(request, env, auth) {
       .prepare('INSERT INTO bills (id, user_id, payee_id, from_account_id, bill_type, payee_name, account_number, amount, due_date, memo, confirmation_number, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(billId, auth.sub, payeeId || null, account.id, billType, payeeName, accountNumber, amount, dueDate || null, memo || null, confirmationNumber, 'completed', now)
   ]);
+
+  await recordAndNotify(
+    env,
+    request,
+    auth.sub,
+    'bill_payment',
+    `Paid $${amount.toFixed(2)} to ${payeeName} (${billType}), confirmation ${confirmationNumber}`,
+    {
+      type: 'transaction',
+      title: 'Bill paid',
+      message: `$${amount.toFixed(2)} paid to ${payeeName}. Confirmation ${confirmationNumber}.`
+    }
+  );
 
   return jsonResponse({
     message: 'Bill paid',

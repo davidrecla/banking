@@ -321,6 +321,27 @@ th.sort-desc::after { content: " \2193"; color: var(--dbs-red); }
 }
 .bank-card-action { margin-top: 12px !important; }
 
+/* ---- Notifications ---- */
+.unread-badge {
+  display: inline-block;
+  min-width: 20px;
+  padding: 2px 7px;
+  margin-left: 8px;
+  border-radius: 10px;
+  background: var(--dbs-red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  vertical-align: middle;
+}
+/* Unread rows get a red edge so they are scannable without colour-coding text. */
+.notif-unread {
+  border-left: 3px solid var(--dbs-red);
+  padding-left: 12px;
+  background: var(--dbs-red-tint);
+}
+
 .toast {
   position: fixed;
   bottom: 24px;

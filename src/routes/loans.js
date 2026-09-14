@@ -1,4 +1,5 @@
 import { jsonResponse, errorResponse } from '../lib/auth.js';
+import { recordAndNotify } from '../lib/activity.js';
 
 const MIN_AMOUNT = 500;
 const MAX_AMOUNT = 10000;
@@ -103,6 +104,21 @@ export async function handleApplyForLoan(request, env, auth) {
   }
 
   await env.BANK_DB.batch(statements);
+
+  await recordAndNotify(
+    env,
+    request,
+    auth.sub,
+    'loan_application',
+    `Applied for $${amount.toFixed(2)} over ${termMonths} months at ${interestRate}% — ${status}`,
+    {
+      type: 'account',
+      title: autoApproved ? 'Loan approved' : 'Loan under review',
+      message: autoApproved
+        ? `Your $${amount.toFixed(2)} loan was approved and disbursed. Monthly payment $${monthlyPayment.toFixed(2)}.`
+        : `Your $${amount.toFixed(2)} loan application is under manual review. We will be in touch.`
+    }
+  );
 
   return jsonResponse({
     message: autoApproved

@@ -1,4 +1,5 @@
 import { jsonResponse, errorResponse } from '../lib/auth.js';
+import { recordAndNotify } from '../lib/activity.js';
 
 export async function handleGetAccounts(request, env, auth) {
   const { results } = await env.BANK_DB
@@ -21,12 +22,12 @@ export async function handleGetAccount(request, env, auth, accountId) {
 
 /** POST /api/accounts/:id/freeze */
 export async function handleFreezeAccount(request, env, auth, accountId) {
-  return setFrozen(env, auth, accountId, 1);
+  return setFrozen(request, env, auth, accountId, 1);
 }
 
 /** POST /api/accounts/:id/unfreeze */
 export async function handleUnfreezeAccount(request, env, auth, accountId) {
-  return setFrozen(env, auth, accountId, 0);
+  return setFrozen(request, env, auth, accountId, 0);
 }
 
 /**
@@ -35,9 +36,9 @@ export async function handleUnfreezeAccount(request, env, auth, accountId) {
  * accounts with a 403. Credits are still allowed, so money can arrive but not
  * leave — the same way a real bank treats a frozen account.
  */
-async function setFrozen(env, auth, accountId, frozen) {
+async function setFrozen(request, env, auth, accountId, frozen) {
   const account = await env.BANK_DB
-    .prepare('SELECT id, frozen FROM accounts WHERE id = ? AND user_id = ?')
+    .prepare('SELECT id, account_type, account_number, frozen FROM accounts WHERE id = ? AND user_id = ?')
     .bind(accountId, auth.sub)
     .first();
   if (!account) return errorResponse('Account not found', 404);
@@ -47,6 +48,21 @@ async function setFrozen(env, auth, accountId, frozen) {
   }
 
   await env.BANK_DB.prepare('UPDATE accounts SET frozen = ? WHERE id = ?').bind(frozen, accountId).run();
+
+  await recordAndNotify(
+    env,
+    request,
+    auth.sub,
+    frozen ? 'account_freeze' : 'account_unfreeze',
+    `${frozen ? 'Froze' : 'Unfroze'} ${account.account_type} account ${account.account_number}`,
+    {
+      type: 'security',
+      title: frozen ? 'Account frozen' : 'Account unfrozen',
+      message: frozen
+        ? `Your ${account.account_type} account is frozen. Outgoing payments and transfers are blocked.`
+        : `Your ${account.account_type} account is active again. Payments and transfers are allowed.`
+    }
+  );
 
   return jsonResponse({
     message: frozen ? 'Account frozen' : 'Account unfrozen',

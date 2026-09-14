@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGC Bank - Profile &amp; Activity</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="top-nav">
+    <div><strong>PGC <span class="brand-mark">BANK</span></strong> &mdash; Profile &amp; Activity</div>
+    <div>
+      <a href="/dashboard" style="margin-right:16px;">Dashboard</a>
+      <a href="/transactions" style="margin-right:16px;">Transactions</a>
+      <button class="btn-danger" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>Your Details</h3>
+    <div class="calc-panel">
+      <div class="calc-item">
+        <span class="calc-label">Name</span>
+        <span class="calc-value" id="p-name">&mdash;</span>
+      </div>
+      <div class="calc-item">
+        <span class="calc-label">Username</span>
+        <span class="calc-value" id="p-username">&mdash;</span>
+      </div>
+      <div class="calc-item">
+        <span class="calc-label">Role</span>
+        <span class="calc-value" id="p-role">&mdash;</span>
+      </div>
+      <div class="calc-item">
+        <span class="calc-label">Accounts</span>
+        <span class="calc-value" id="p-accounts">&mdash;</span>
+      </div>
+      <div class="calc-item">
+        <span class="calc-label">Total Balance</span>
+        <span class="calc-value" id="p-total">&mdash;</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3>
+      Notifications
+      <span class="unread-badge" id="unread-badge" style="display:none;">0</span>
+    </h3>
+    <div class="filter-actions" style="margin-top:0;margin-bottom:14px;">
+      <button type="button" class="btn-secondary" id="toggle-unread">Show unread only</button>
+      <button type="button" class="btn-secondary" id="mark-all">Mark all read</button>
+    </div>
+    <div id="notif-list">Loading...</div>
+  </div>
+
+  <div class="section-card">
+    <h3>Security Activity Log</h3>
+    <p style="font-size:13px;color:var(--dbs-gray);margin-top:0;">
+      Every sign-in, payment, transfer and security change is recorded here with the
+      originating IP address.
+    </p>
+    <div class="filter-grid" style="margin-bottom:14px;">
+      <div>
+        <label for="a-type">Event type</label>
+        <select id="a-type"><option value="">All events</option></select>
+      </div>
+    </div>
+    <div class="txn-table-wrap">
+      <table class="txn-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Event</th>
+            <th>Detail</th>
+            <th>IP Address</th>
+          </tr>
+        </thead>
+        <tbody id="audit-body"><tr><td colspan="4">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div class="pagination-bar">
+      <button class="btn-secondary" id="a-prev" disabled>Previous</button>
+      <span id="a-label"></span>
+      <button class="btn-secondary" id="a-next" disabled>Next</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  const AUDIT_LIMIT = 20;
+  const state = { unreadOnly: false, auditOffset: 0, auditTotal: 0, eventType: '' };
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  function prettyEvent(type) {
+    return String(type).replace(/_/g, ' ');
+  }
+
+  function loadProfile() {
+    const user = getUser();
+    document.getElementById('p-name').textContent = user ? user.fullName : '-';
+    document.getElementById('p-username').textContent = user ? user.username : '-';
+    document.getElementById('p-role').textContent = user ? user.role : '-';
+  }
+
+  async function loadAccountSummary() {
+    const res = await authFetch('/api/accounts');
+    const data = await res.json();
+    const total = data.accounts.reduce((sum, a) => sum + a.balance, 0);
+    document.getElementById('p-accounts').textContent = data.accounts.length;
+    document.getElementById('p-total').textContent = formatCurrency(total);
+  }
+
+  async function loadNotifications() {
+    const query = state.unreadOnly ? '?unreadOnly=true' : '';
+    const res = await authFetch(`/api/notifications${query}`);
+    const data = await res.json();
+
+    const badge = document.getElementById('unread-badge');
+    if (data.unreadCount > 0) {
+      badge.textContent = data.unreadCount;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+
+    const listEl = document.getElementById('notif-list');
+    if (!data.notifications.length) {
+      listEl.innerHTML = `<p style="color:var(--dbs-gray);">${state.unreadOnly ? 'No unread notifications.' : 'No notifications yet.'}</p>`;
+      return;
+    }
+
+    listEl.innerHTML = data.notifications.map((n) => `
+      <div class="file-row ${n.read ? '' : 'notif-unread'}">
+        <div>
+          <strong>${escapeHtml(n.title)}</strong>
+          <span class="status-pill status-${n.type === 'security' ? 'failed' : 'completed'}" style="margin-left:8px;">
+            ${escapeHtml(n.type)}
+          </span>
+          <div style="font-size:12px;color:var(--dbs-gray);margin-top:2px;">
+            ${escapeHtml(n.message)}
+          </div>
+          <div style="font-size:11px;color:var(--dbs-gray);margin-top:2px;">
+            ${new Date(n.created_at).toLocaleString()}
+          </div>
+        </div>
+        ${n.read ? '' : `<button class="btn-secondary" style="width:auto;margin-top:0;" onclick="markRead('${n.id}')">Mark read</button>`}
+      </div>
+    `).join('');
+  }
+
+  async function markRead(id) {
+    await authFetch(`/api/notifications/${id}/read`, { method: 'POST' });
+    loadNotifications();
+  }
+
+  async function loadAuditLog() {
+    const body = document.getElementById('audit-body');
+    const params = new URLSearchParams({ limit: AUDIT_LIMIT, offset: state.auditOffset });
+    if (state.eventType) params.set('eventType', state.eventType);
+
+    const res = await authFetch(`/api/audit-log?${params}`);
+    const data = await res.json();
+
+    state.auditTotal = data.pagination.total;
+
+    const select = document.getElementById('a-type');
+    if (select.options.length <= 1 && data.eventTypes.length) {
+      select.innerHTML =
+        '<option value="">All events</option>' +
+        data.eventTypes.map((t) => `<option value="${t}">${prettyEvent(t)}</option>`).join('');
+      select.value = state.eventType;
+    }
+
+    if (!data.entries.length) {
+      body.innerHTML = '<tr><td colspan="4" style="color:var(--dbs-gray);">No activity recorded yet.</td></tr>';
+    } else {
+      body.innerHTML = data.entries.map((e) => `
+        <tr>
+          <td>${new Date(e.created_at).toLocaleString()}</td>
+          <td><strong>${prettyEvent(e.event_type)}</strong></td>
+          <td style="text-transform:none;white-space:normal;">${escapeHtml(e.detail || '-')}</td>
+          <td>${escapeHtml(e.ip_address || '-')}</td>
+        </tr>
+      `).join('');
+    }
+
+    document.getElementById('a-label').textContent =
+      `Page ${Math.floor(state.auditOffset / AUDIT_LIMIT) + 1} of ${Math.max(1, Math.ceil(state.auditTotal / AUDIT_LIMIT))} (${state.auditTotal} events)`;
+    document.getElementById('a-prev').disabled = state.auditOffset === 0;
+    document.getElementById('a-next').disabled = !data.pagination.hasMore;
+  }
+
+  document.getElementById('toggle-unread').addEventListener('click', (e) => {
+    state.unreadOnly = !state.unreadOnly;
+    e.target.textContent = state.unreadOnly ? 'Show all' : 'Show unread only';
+    loadNotifications();
+  });
+
+  document.getElementById('mark-all').addEventListener('click', async () => {
+    const res = await authFetch('/api/notifications/read-all', { method: 'POST' });
+    const data = await res.json();
+    showToast(data.message);
+    loadNotifications();
+  });
+
+  document.getElementById('a-type').addEventListener('change', (e) => {
+    state.eventType = e.target.value;
+    state.auditOffset = 0;
+    loadAuditLog();
+  });
+
+  document.getElementById('a-prev').addEventListener('click', () => {
+    state.auditOffset = Math.max(0, state.auditOffset - AUDIT_LIMIT);
+    loadAuditLog();
+  });
+
+  document.getElementById('a-next').addEventListener('click', () => {
+    state.auditOffset += AUDIT_LIMIT;
+    loadAuditLog();
+  });
+
+  loadProfile();
+  loadAccountSummary();
+  loadNotifications();
+  loadAuditLog();
+</script>
+</body>
+</html>
