@@ -4,7 +4,7 @@
 
 **Base spec source:** `FUNCTIONALITY-SUMMARY.md` (original requirements doc, in the user's Downloads folder, not part of this repo), extended with security-showcase additions decided during planning.
 
-**Status: Phases 1, 1.5 and 2 are complete and live in production.** Next up is Phase 3 (statements, cards, notifications). Read this whole file before starting — it has everything needed to continue without re-deriving context.
+**Status: Phases 1, 1.5, 2 and 3 are complete and live in production.** Next up is **Phase 4, the security showcase layer — which is the actual point of this project.** Read this whole file before starting; in particular read "Things Phase 3 established that later phases must respect" and the WAF note under Phase 4, both of which change how Phase 4 should be built.
 
 ---
 
@@ -40,6 +40,9 @@ banking/
 │   ├── loans.html              # Loan application with live payment calculator (/loans)
 │   ├── investments.html        # Plan cards, purchase with return calculator, withdraw (/investments)
 │   ├── transfers.html          # External + batch transfers to mock banks (/transfers)
+│   ├── statements.html         # Generate/download PDF + CSV statements (/statements)
+│   ├── cards.html              # Cards with block/unblock + account freeze controls (/cards)
+│   ├── profile.html            # User details, notifications, security activity log (/profile)
 │   ├── uploads.html            # Documents/file upload page
 │   ├── app.js                  # Shared client helpers: auth token storage, authFetch(), toasts, formatCurrency()
 │   └── styles.css              # DBS-inspired styling (see "UI Design" section below)
@@ -48,14 +51,16 @@ banking/
 ├── scripts/
 │   ├── generate-seed.mjs      # Generates .ps1 of wrangler d1 execute --command calls to seed 5 demo users + 15 accounts
 │   ├── update-passwords.mjs   # Generates .ps1 of UPDATE statements to change existing users' passwords (used when password scheme changed post-seed)
-│   ├── generate-phase2-schema.mjs  # Emits .ps1 applying schema/002_phase2.sql one statement at a time
-│   └── generate-transactions.mjs   # Emits .ps1 seeding ~95 mock transactions over 6 months AND the balances they imply (needs an accounts.json dump; see its header)
+│   ├── generate-schema.mjs         # Emits .ps1 applying any schema/*.sql one statement at a time
+│   ├── generate-transactions.mjs   # Emits .ps1 seeding ~95 mock transactions over 6 months AND the balances they imply (needs an accounts.json dump; see its header)
+│   ├── generate-cards.mjs          # Emits .ps1 seeding 2 masked cards per demo user (needs accounts.json with user_id/full_name)
+│   └── generate-activity.mjs       # Emits .ps1 seeding audit entries + notifications (needs users.json; never implies money movement)
 ├── wrangler.toml               # Worker config: bindings (D1/KV/R2/Assets), no secrets here (JWT_SECRET is a real Cloudflare secret)
 ├── package.json
 └── BUILD-PLAN.md               # This file
 ```
 
-Generated files are gitignored (regenerate via their `.mjs` source if needed): `scripts/seed-commands.ps1`, `scripts/update-passwords-commands.ps1`, `scripts/phase2-schema.ps1`, `scripts/transactions-seed.ps1`, `scripts/accounts.json`.
+Generated files are gitignored (regenerate via their `.mjs` source if needed): `scripts/seed-commands.ps1`, `scripts/update-passwords-commands.ps1`, `scripts/schema-*.ps1`, `scripts/transactions-seed.ps1`, `scripts/cards-seed.ps1`, `scripts/activity-seed.ps1`, `scripts/r2-cleanup.ps1`, `scripts/accounts.json`, `scripts/users.json`.
 
 ---
 
@@ -69,7 +74,7 @@ Generated files are gitignored (regenerate via their `.mjs` source if needed): `
 | JWT signing key | **Cloudflare Secret** (`JWT_SECRET`, via `wrangler secret put`) | Single static app-wide value — correct use of Secrets. Already set; **do not** put it in `wrangler.toml` or commit it anywhere |
 | User passwords | **Hashed in D1** (PBKDF2 + per-user random salt, via Web Crypto) | Never stored in plaintext, even for demo accounts. Hashing/verification implemented in `src/lib/crypto.js` |
 | JWT implementation | **Hand-rolled HS256** in `src/lib/crypto.js` (no `jose`/library dependency) | Kept dependency-free per the project's "vanilla JS" convention; simple enough to implement directly with Web Crypto's HMAC |
-| PDF generation (Phase 3, not yet built) | **`pdf-lib`** (pure JS, Workers-compatible) | No Node-specific APIs; Node PDF libs (pdfkit etc.) don't run in Workers runtime |
+| PDF generation (Phase 3, built) | **`pdf-lib`** `^1.17.1` (pure JS, Workers-compatible) | No Node-specific APIs; Node PDF libs (pdfkit etc.) don't run in Workers runtime. Verified generating a valid parseable PDF on the real edge, not just bundling |
 | Static UI hosting | **Workers Assets** (`[assets]` in `wrangler.toml`, `directory = "./public"`) | Lets one Worker serve both the API (`/api/*`) and the static SPA-ish UI from the same deployment/domain. Requests to `/api/*` fall through to the Worker's `fetch` handler automatically because no static file matches that path — no special routing config needed beyond the `[assets]` block |
 
 ---
@@ -230,13 +235,33 @@ CREATE TABLE transfers (
 -- transactions.created_at
 ```
 
-### Planned additions for later phases (not yet created)
+## D1 Schema — Phase 3 additions (applied and live)
+
+Reference copies in `schema/003_phase3.sql` and `schema/004_account_freeze.sql`. Applied via `node scripts/generate-schema.mjs <file> > scripts/schema-00N.ps1` and running the generated script.
+
 ```sql
-cards (id, user_id FK, card_number_masked, expiry, cvv_masked, status, linked_account_id FK)
-notifications (id, user_id FK, type, message, read, created_at)
-audit_logs (id, user_id FK, event_type, ip_address, device_info, created_at)
-statements (id, user_id FK, account_id NULLABLE, format, date_range_start, date_range_end, r2_key, created_at)
+statements (id, user_id FK, account_id FK, format, date_range_start,
+            date_range_end, transaction_count, r2_key, size_bytes, created_at)
+
+cards (id, user_id FK, linked_account_id FK, card_type, card_number_masked,
+       card_holder, expiry, cvv_masked, status, blocked_at, created_at)
+  -- masked values ONLY; no full PAN or CVV exists anywhere (see point 5 above)
+
+notifications (id, user_id FK, type, title, message, read, created_at)
+  -- type: transaction | security | account | promotion
+
+audit_logs (id, user_id FK, event_type, detail, ip_address, user_agent, created_at)
+
+ALTER TABLE accounts ADD COLUMN frozen INTEGER NOT NULL DEFAULT 0;
+  -- schema 004. Phase 1's users.account_frozen is user-wide and unused; it was
+  -- left in place rather than dropped, in case Phase 4 wants it.
+
+-- plus indexes on statements.user_id, cards.user_id, notifications.user_id,
+-- notifications(user_id, read), audit_logs.user_id, audit_logs.created_at
 ```
+
+### Planned additions for later phases (not yet created)
+None — all tables from the original spec now exist. Phase 4 adds endpoints, not tables.
 
 KV keys in use (not D1):
 - `ratelimit:login:{username}` — login attempt counter, 60s TTL, max 5/min (see `src/lib/ratelimit.js`)
@@ -302,20 +327,35 @@ Implemented in `src/routes/transactions.js`, `bills.js`, `loans.js`, `investment
 - `POST /api/transfers/batch` — body `{ fromAccountId, transfers: [{ bankCode, accountNumber, accountName, amount, note? }] }`, **max 10 items**. **All-or-nothing:** every item is validated before any write, and the combined total *including fees* is checked against the balance up front, so a bad entry mid-list can't leave a partially-applied batch. Errors name the offending index (`transfers[1]: ...`). Items share a `batch_id`.
 - `GET /api/transfers` — external/batch history with reference numbers.
 
+## API Endpoints — Phase 3 (implemented and live)
+
+Implemented in `src/routes/statements.js`, `cards.js`, `notifications.js`, `audit.js` and (extended) `accounts.js`. All require `Authorization: Bearer <jwt>`.
+
+### Statements
+- `POST /api/statements/generate` — body `{ accountId, from, to, format? }`, `format` = `pdf` (default) or `csv`. Renders the file, stores it in R2 at `statements/{userId}/{statementId}.{ext}`, records a `statements` row, and returns the period totals.
+- `GET /api/statements` — the caller's statements, newest first.
+- `GET /api/statements/:id/download` — streams the stored file from R2 with the right `Content-Type`/`Content-Disposition`. Ownership-checked.
+- Both formats are built from **one shared dataset function**, so the PDF and CSV can never disagree about the numbers. Only settled rows count toward totals. See point 2 above on period balances.
+
+### Cards
+- `GET /api/cards` — masked card details joined to the linked account.
+- `POST /api/cards/:id/block`, `POST /api/cards/:id/unblock` — ownership-checked; a no-op repeat returns 400 rather than silently succeeding.
+
+### Account freeze
+- `POST /api/accounts/:id/freeze`, `POST /api/accounts/:id/unfreeze` — see point 1 above; this is enforced across every debit path, not just a flag. `GET /api/accounts` now returns `frozen`.
+
+### Notifications
+- `GET /api/notifications` — query params `unreadOnly=true`, `limit` (1-100, default 50). Always returns `unreadCount` alongside the rows so a nav badge needs no second request.
+- `POST /api/notifications/:id/read` — marking an already-read notification is a no-op success, since a client can race itself.
+- `POST /api/notifications/read-all` — **registered before the `/:id/read` pattern** so `"read-all"` is never parsed as an id.
+- Notifications go to whoever the event concerns, not whoever triggered it: an internal transfer notifies the **recipient**.
+
+### Audit log
+- `GET /api/audit-log` — query params `eventType`, `limit` (1-100, default 50), `offset`. Returns entries, the caller's distinct `eventTypes` (so the UI filter only offers values that return something), and pagination. Scoped to the caller.
+
 ### Planned for later phases (not yet implemented)
 ```
-POST /api/accounts/:id/freeze       — Phase 3
-POST /api/accounts/:id/unfreeze     — Phase 3
-POST /api/statements/generate       (PDF via pdf-lib, or CSV) — Phase 3
-GET  /api/statements                — Phase 3
-GET  /api/statements/:id/download   — Phase 3
-GET  /api/cards                     — Phase 3
-POST /api/cards/:id/block           — Phase 3
-POST /api/cards/:id/unblock         — Phase 3
-GET  /api/notifications             — Phase 3
-POST /api/notifications/:id/read    — Phase 3
-GET  /api/audit-log                 — Phase 3
-GET  /api/usage                     — Phase 3
+GET  /api/usage                     — Phase 4/5 (API usage metrics)
 ```
 
 ---
@@ -429,16 +469,35 @@ This was not true originally: the first version of `generate-transactions.mjs` w
 
 **If you reseed, re-check the invariant** with the query in the PR that introduced this (`fix/reconciling-ledger`), or simply re-derive it: group `transactions` by `account_id`, sum completed credits minus completed debits, compare to `accounts.balance`. Any future feature that moves money must write its ledger row in the same `batch()` as the balance update — as bills, loans, investments and transfers all already do — or this invariant silently breaks.
 
-### Phase 3 — Statements, Cards, Notifications (START HERE NEXT)
-- [ ] `pdf-lib` integration (`bun add pdf-lib` — first non-trivial dependency in this project, verify it bundles fine with `wrangler deploy`); generate statement PDFs, store in R2 (`statements/{userId}/{statementId}.pdf`)
-- [ ] CSV export (simple string-building, no library)
-- [ ] Statements UI page + statement history list
-- [ ] `cards` table + endpoints (view/block/unblock) + Cards UI section
-- [ ] `notifications` table + endpoints + UI notification area
-- [ ] `audit_logs` table + endpoint + UI viewer in Profile page
-- [ ] Account freeze/unfreeze UI wiring (`POST /api/accounts/:id/freeze` etc. — endpoints not yet built either)
+### Phase 3 — Statements, Cards, Notifications — ✅ COMPLETE AND MERGED TO MAIN (live in production)
+Delivered as three PRs: #14 statements + schema + lockfile, #15 cards + enforced freeze + UI, #16 notifications + audit log.
+- [x] `pdf-lib` integration — statement PDFs stored in R2 (`statements/{userId}/{statementId}.pdf`)
+- [x] CSV export (hand-built, RFC 4180 quoting, no library)
+- [x] Statements UI page (`public/statements.html`) + statement history list
+- [x] `cards` table + endpoints (view/block/unblock) + `public/cards.html`; 10 cards seeded via `scripts/generate-cards.mjs`
+- [x] `notifications` table + endpoints + notification area on the Profile page, with an unread badge in the dashboard nav
+- [x] `audit_logs` table + endpoint + viewer on `public/profile.html`
+- [x] Account freeze/unfreeze endpoints **and enforcement** (`accounts.frozen`, schema 004)
 
-### Phase 4 — Security Showcase Layer
+**Post-Phase-3 data baseline** (verified after cleanup): **95** transactions reconciling against all 15 account balances; `bills`/`loans`/`investments`/`transfers`/`statements` all **empty**; **10** cards, all active; **40** audit entries and **15** notifications (seeded); no frozen accounts. R2 holds no statement objects.
+
+### Things Phase 3 established that later phases must respect
+
+1. **A freeze is enforced, not a flag.** Every path that debits an account loads it through `loadDebitableAccount()` in `src/lib/accounts.js`, which 403s frozen accounts. Credits are deliberately still allowed, so money can arrive but not leave. **Any new money-moving endpoint must use that helper**, or a freeze silently becomes decorative again. Verified: internal, external and batch transfers, bill payments and investment purchases are all refused on a frozen account, while loan disbursement, incoming transfers and statement generation still work.
+
+2. **Statement period balances come from the ledger, never from `accounts.balance`.** The opening balance sums everything that settled *before* the window and closing is opening + net, so consecutive periods chain (verified: Mar–Jun closes at 2854.82, Jul-onward opens at 2854.82). Reading the current balance as the closing balance — which the first implementation did — is only correct when the window happens to cover all history.
+
+3. **Audit entries are written by the actions themselves**, so the log is real evidence rather than a viewer over an empty table: `login`, `login_failed`, `logout`, `transfer_internal`, `transfer_external`, `transfer_batch`, `bill_payment`, `loan_application`, `investment_purchase`, `investment_withdraw`, `card_block`, `card_unblock`, `account_freeze`, `account_unfreeze`, `statement_generate`. Each captures `CF-Connecting-IP` and the user agent. **Logging is best-effort and deliberately outside the caller's `batch()`** — a completed transfer must never fail because a log insert did, and batching them would let a logging failure roll back money movement.
+
+4. **Seeded audit entries must never imply money movement.** `scripts/generate-activity.mjs` only seeds session/security/document events, because an entry claiming a payment with no matching transaction row would contradict the reconciling ledger. Money-movement entries appear only when someone really performs the action.
+
+5. **Cards store only masked values.** `'**** **** **** NNNN'` and `'***'` — there is no full PAN or CVV anywhere in the system, and that is intentional. If Phase 4 wants a card-data-exposure vulnerability, generate obviously-fake numbers on the fly at that point rather than persisting realistic ones now.
+
+6. **Bundle size is now worth watching.** `pdf-lib` took the Worker from ~47 KiB to ~900 KiB raw / ~230 KiB gzipped. Still well inside Workers' limits, but a second heavy dependency deserves a check.
+
+7. **A lockfile is now committed.** `package-lock.json` is tracked, so CI installs a pinned graph and the deployed artifact is reproducible. `npm audit` reports 0 vulnerabilities.
+
+### Phase 4 — Security Showcase Layer (START HERE NEXT)
 - [ ] Implement all 10 intentional vulnerabilities from the OWASP mapping table above, on clearly separate/isolated endpoints
 - [ ] Verify WAF/content-scanning test surfaces work as intended
 - [ ] Write `openapi-schema.yaml` (OpenAPI 3.0) covering all **legitimate** endpoints only — deliberately exclude the shadow `/api/v1` endpoint so it shows up as a "shadow API" in API Discovery
@@ -458,7 +517,7 @@ This was not true originally: the first version of `generate-transactions.mjs` w
 - Zone: `puregroundscoffee.com` is an active zone in this same Cloudflare account, which is what makes the custom domain possible. The `[[routes]]` entry with `custom_domain = true` creates the DNS record and TLS cert automatically on deploy. Non-production branches also auto-build and get their own preview URL (format: `https://{version-id-prefix}-banking.davidrecla.workers.dev`, findable via `wrangler versions list` or the "Checks" tab on a GitHub PR).
 - D1: `bank-database` (id `6f12dd90-3093-4b25-adcb-a0e43ece88ac`), binding `BANK_DB` — schema applied (`users`, `accounts`, `transactions`, `uploads`), seeded with 5 demo users + 15 accounts.
 - KV: `BANK_KV` (id `fa8bcc19366b4f68ac9c3ff6ebf54a0b`) — rate-limit counters. Plus `banking-BANK_KV_preview` (id `5870aa99099a4e6a99ed8301ec90df68`), used only by `wrangler dev` via `preview_id`.
-- R2: `bank-bucket`, binding `BANK_BUCKET` — user uploads (Phase 1); will also store generated statements (Phase 3). Plus `bank-bucket-preview`, used only by `wrangler dev` via `preview_bucket_name`.
+- R2: `bank-bucket`, binding `BANK_BUCKET` — user uploads (`uploads/{userId}/...`) and generated statements (`statements/{userId}/{statementId}.{pdf|csv}`). Plus `bank-bucket-preview`, used only by `wrangler dev` via `preview_bucket_name`. **Note both buckets accumulate statements during testing** — `wrangler dev --remote` writes to the preview bucket while a deployed preview URL writes to production, so a cleanup pass has to clear both.
 - Tooling: Wrangler is pinned to **4.x** in `package.json` (`^4.131.1`). It was on `^3.72.0`; the upgrade was required to make `wrangler dev --remote` work on this network and also cleared all 6 `npm audit` advisories (`npm audit` now reports 0).
 - Secret: `JWT_SECRET` set directly on the `banking` Worker (48 random bytes, base64-encoded). Not in any file — fetch/rotate via `wrangler secret put JWT_SECRET` if ever needed.
 
