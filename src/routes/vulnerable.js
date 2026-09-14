@@ -53,13 +53,21 @@ export async function handleInternalDebug(env) {
     .prepare('SELECT id, username, full_name, role, member_since, account_frozen, password_hash, salt FROM users')
     .all();
 
+  // Obviously-fake, publicly-documented SSNs (e.g. 078-05-1120 is the famous
+  // 1938 Woolworth-specimen number used to advertise lock wallets) so the dump
+  // reads plausibly sensitive AND reliably trips sensitive-data detection. They
+  // are deterministic per user so repeat demos look identical, and there are no
+  // real identifiers behind them — see BUILD-PLAN parity note for PANs.
+  const FAKE_SSNS = ['078-05-1120', '219-09-9999', '457-55-5462', '234-56-7890', '111-22-3333'];
+  const enriched = users.map((u, i) => ({ ...u, ssn: FAKE_SSNS[i % FAKE_SSNS.length] }));
+
   return jsonResponse({
     environment: 'production',
     worker: 'banking',
     auth: { algorithm: 'HS256', secretSource: 'env.JWT_SECRET', tokenTtlSeconds: 86400 },
     rateLimits: { loginAttemptsPerMinute: 5, internalTransferDailyMaxUsd: 1000 },
     bindings: ['BANK_DB', 'BANK_KV', 'BANK_BUCKET'],
-    users
+    users: enriched
   });
 }
 
@@ -97,6 +105,8 @@ export async function handleGetProfile(request, env, auth) {
     profile.internal = {
       session: auth,
       databaseFlags: { account_frozen: user.account_frozen },
+      // Fake, publicly-documented SSN format for the sensitive-data detection leg.
+      ssn: '078-05-1120',
       accounts
     };
   }

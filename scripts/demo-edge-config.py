@@ -109,6 +109,43 @@ def validation_action(z):
         "validation_default_mitigation_action", "none")
 
 
+# Exposed Credentials Check managed ruleset (found at account level), executed
+# from the zone's managed phase. Default rewrite action logs + sets the
+# Exposed-Credential-Check header on hits; its own rules already target
+# JSON logins with {username, password} — exactly our POST /api/auth/login.
+EXPOSED_CREDS_RULESET_ID = "c2e184081120413c86c3ab7e14069605"
+
+
+def apply_managed_rule(z, enabled):
+    """Add/enable/isable the exposed-credential-check execute rule in the
+    managed phase, preserving the zone's existing managed rules."""
+    phase = "http_request_firewall_managed"
+    existing = get_ruleset(z, phase)
+    if not existing:
+        raise RuntimeError("no managed-phase entrypoint ruleset found — expected OWASP + Managed rulesets")
+    current = existing["rules"]
+    keep = [r for r in current if not r.get("description", "").startswith(RULE_PREFIX)]
+    ours = {
+        "description": f"{RULE_PREFIX} exposed credential check on login",
+        "expression": f'(http.host eq "{HOST}")',
+        "action": "execute",
+        "action_parameters": {"id": EXPOSED_CREDS_RULESET_ID},
+        "enabled": enabled,
+    }
+    put_ruleset(z, phase, keep + [ours])
+    state = "armed" if enabled else "disarmed"
+    print(f"  {state}: {ours['description']}")
+
+
+def managed_rule_status(z):
+    existing = get_ruleset(z, "http_request_firewall_managed")
+    ours = [r for r in (existing["rules"] if existing else []) if r.get("description", "").startswith(RULE_PREFIX)]
+    for r in ours:
+        print(f"  [{'on' if r.get('enabled') else 'off'}] {r['description']}")
+    if not ours:
+        print("  (no demo rules in http_request_firewall_managed)")
+
+
 # --- Custom + rate-limit rules ----------------------------------------------
 # Both phases: fetch the entrypoint ruleset (creating it if needed), keep any
 # rules that are not ours, and write back our rules with the desired state.
@@ -230,11 +267,13 @@ def main():
         print("arming protections (demo AFTER state):")
         apply_rules(z, "http_request_firewall_custom", CUSTOM_RULES, True)
         apply_rules(z, "http_ratelimit", RATE_LIMIT_RULES, True)
+        apply_managed_rule(z, True)
         set_validation_action(z, "block")
     elif cmd == "disarm":
         print("disarming protections (demo BEFORE / staging state):")
         apply_rules(z, "http_request_firewall_custom", CUSTOM_RULES, False)
         apply_rules(z, "http_ratelimit", RATE_LIMIT_RULES, False)
+        apply_managed_rule(z, False)
         set_validation_action(z, "log")
     elif cmd == "status":
         print(f"  schema validation default action: {validation_action(z)}")
@@ -245,6 +284,7 @@ def main():
                 print(f"  [{'on' if r.get('enabled') else 'off'}] {r['description']}")
             if not ours:
                 print(f"  (no demo rules in {phase})")
+        managed_rule_status(z)
     else:
         sys.exit(f"unknown command: {cmd}")
 
