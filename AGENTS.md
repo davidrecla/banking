@@ -19,7 +19,10 @@ This file covers only what `BUILD-PLAN.md` does not.
 ```bash
 npm install          # install deps (wrangler only; see lockfile note below)
 npm run dev          # wrangler dev -- prefer `npx wrangler dev --remote`,
-                     # which hits the real D1/KV/R2 and the real JWT secret
+                     # which hits the real D1 and the real JWT secret (KV/R2
+                     # use separate preview resources; see BUILD-PLAN note 4).
+                     # Requires wrangler 4.x on this network.
+npx wrangler deploy --dry-run   # ALWAYS run before pushing wrangler.toml changes
 npm run deploy       # wrangler deploy (rarely needed -- main auto-deploys)
 ```
 
@@ -54,14 +57,12 @@ real change rather than a chore:
 - It pins the dependency graph that CI installs, so it alters what gets
   built and therefore deployed. Because a push to `main` auto-deploys,
   land it on a branch and verify the preview URL before merging.
-- `npm audit` currently reports 6 advisories (2 moderate, 4 high), all in
-  `ws` via `wrangler`. These are **devDependencies only** -- wrangler is a
-  build/dev tool and none of it ships in the Worker bundle, so this is not
-  production exposure. The only clean fix is wrangler 4.x, which `npm audit
-  fix --force` flags as breaking (`package.json` currently allows
-  `^3.72.0`; 3.114.17 resolves today). Upgrading the major version is its
-  own task -- do it deliberately, on a branch, and re-test `wrangler dev
-  --remote` plus a deploy.
+- `npm audit` reported 6 advisories (2 moderate, 4 high) in `ws` via
+  wrangler 3.x. **Resolved:** wrangler is now pinned to `^4.131.1` and
+  `npm audit` reports 0 vulnerabilities. The upgrade was done deliberately
+  on a branch and re-tested with `wrangler dev --remote` plus a
+  `deploy --dry-run`; it was also what made `dev --remote` work again on
+  this network (see `BUILD-PLAN.md` note 4).
 
 ## Transient Cloudflare API failures
 
