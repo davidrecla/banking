@@ -3,6 +3,7 @@ import { handleLogin, handleRefresh, handleLogout } from './routes/auth.js';
 import { handleGetAccounts, handleGetAccount } from './routes/accounts.js';
 import { handleInternalTransfer } from './routes/transfers.js';
 import { handleGetTransactions, handleGetTransaction } from './routes/transactions.js';
+import { handleGetPayees, handleCreatePayee, handleDeletePayee, handlePayBill, handleGetBills } from './routes/bills.js';
 import { handleUploadFile, handleListUploads, handleDownloadUpload, handleDeleteUpload } from './routes/uploads.js';
 
 const CORS_HEADERS = {
@@ -48,6 +49,17 @@ export default {
 
       const transactionMatch = pathname.match(/^\/api\/transactions\/([^/]+)$/);
       if (transactionMatch && method === 'GET') return await handleGetTransaction(request, env, auth, transactionMatch[1]);
+
+      // Payee routes are matched before /api/bills/:id-style routes so that
+      // "payees" is never treated as an id.
+      if (pathname === '/api/bills/payees' && method === 'GET') return await handleGetPayees(request, env, auth);
+      if (pathname === '/api/bills/payees' && method === 'POST') return await handleCreatePayee(request, env, auth);
+
+      const payeeMatch = pathname.match(/^\/api\/bills\/payees\/([^/]+)$/);
+      if (payeeMatch && method === 'DELETE') return await handleDeletePayee(request, env, auth, payeeMatch[1]);
+
+      if (pathname === '/api/bills/pay' && method === 'POST') return await handlePayBill(request, env, auth);
+      if (pathname === '/api/bills' && method === 'GET') return await handleGetBills(request, env, auth);
 
       if (pathname === '/api/uploads' && method === 'POST') return await handleUploadFile(request, env, auth);
       if (pathname === '/api/uploads' && method === 'GET') return await handleListUploads(request, env, auth);
