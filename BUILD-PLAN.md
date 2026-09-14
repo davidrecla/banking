@@ -4,7 +4,7 @@
 
 **Base spec source:** `FUNCTIONALITY-SUMMARY.md` (original requirements doc, in the user's Downloads folder, not part of this repo), extended with security-showcase additions decided during planning.
 
-**Status: Phases 1, 1.5, 2 and 3 are complete and live in production.** Next up is **Phase 4, the security showcase layer — which is the actual point of this project.** Read this whole file before starting; in particular read "Things Phase 3 established that later phases must respect" and the WAF note under Phase 4, both of which change how Phase 4 should be built.
+**Status: Phases 1, 1.5, 2, 3 and 4 are complete and live in production.** Phase 4 shipped: the 9 intentionally vulnerable endpoints (`src/routes/vulnerable.js`), `openapi-schema.yaml` (legit endpoints only), `test-api.sh`, `attack-simulation.sh`, and final docs (README, DOCUMENTATION.txt, API_REFERENCE.md). What remains for the demo is **Cloudflare zone configuration, not repo work**: upload the schema, create the rules listed in the Phase 4 matrix, run both scripts end-to-end. Read this whole file before starting; in particular read "Things Phase 3 established that later phases must respect" and the WAF note under Phase 4, both of which change how Phase 4 should be built.
 
 ---
 
@@ -532,16 +532,16 @@ Delivered as three PRs: #14 statements + schema + lockfile, #15 cards + enforced
 
 7. **A lockfile is now committed.** `package-lock.json` is tracked, so CI installs a pinned graph and the deployed artifact is reproducible. `npm audit` reports 0 vulnerabilities.
 
-### Phase 4 — Security Showcase Layer (IN PROGRESS)
+### Phase 4 — Security Showcase Layer — ✅ COMPLETE (repo work; zone config remaining)
 - [x] Vulnerable endpoints live in `src/routes/vulnerable.js` and are routed in `src/index.js` — all deliberately isolated under their own paths so the legitimate API surface is untouched. Verified live with `wrangler dev --remote`: every exploit succeeds (debug dump, BOLA enumeration, `?internal=1`, rapid express transfers, BFLA list + force-approve incl. a $3000 payout, SSRF fetch + body exfiltration, stack-trace leak incl. server file paths, shadow `v1/accounts`). API8's demo target is `POST /api/debug/parse` (isolated) instead of `/api/auth/login`, so the real login endpoint stays clean.
 - [x] `role` claim at login — **already present** since Phase 1 (`{ sub, username, role }`), no change needed; the JWT validation claims rules for API5/API1 work against today's tokens
 - Two new audit event types come from the vulnerable actions: `transfer_express` and `loan_force_approve` (Phase 3 note 3's list is the legitimate set)
 - **Post-endpoint-build test state in D1:** chris.brown has one approved $3000 loan (applied pending_review, then force-approved via the API5b endpoint during verification) and sent $3 to sarah.johnson via express transfers. The ledger invariant still holds. These are intentional demo props — the attack script can create fresh ones, so re-running the "before" leg does not depend on this specific loan
-- [ ] Verify WAF/content-scanning test surfaces work as intended
-- [ ] Write `openapi-schema.yaml` (OpenAPI 3.0) covering all **legitimate** endpoints only — deliberately exclude the shadow `/api/v1` endpoint so it shows up as a "shadow API" in API Discovery
+- [x] Verify WAF/content-scanning test surfaces — SQLi probe covered by the app's own sort whitelist (400) with the edge 403 already field-proven in Phase 2; EICAR upload blocked client-side by the machine's Gateway policy (see script notes — demo from a clean network); the oversized-batch-body 413 demo depends on the zone plan tier (Free/Pro 100 MB) and is a live-demo step rather than something to rehearse from this network
+- [x] `openapi-schema.yaml` (OpenAPI 3.0.3, verified parseable, 37 paths, all internal refs resolve) covering all **legitimate** endpoints only — the shadow `/api/v1/accounts` and every other vulnerable endpoint are deliberately excluded so the fallthrough rule works and API Discovery has a finding
 - [x] `test-api.sh` — happy-path contract check of all legitimate endpoints (39 checks, read-mostly with self-cleaning mutations; run at demo start and end to prove legit traffic survives). It immediately caught a real Phase 2 bug on its first run: deleting a saved payee 500'd once any bill referenced it (`bills.payee_id` FK is enforced by D1) — fixed by NULLing the referencing rows in the same batch as the delete.
 - [x] `attack-simulation.sh` — exercises each intentional vulnerability with `before`/`after` verdict modes (the same script is both demo acts; damage contained by construction). Verified "before" run against production: all 9 vulnerabilities succeed, incl. the $3000 force-approve fraud and a 20-transfer burst. Two environment findings: (a) the SQLi probe now 400s from the app's own sort whitelist — the Phase 2-era 403 came from managed rules blocking before the app saw it, and with rules in their current zone state the app handles it; (b) the EICAR upload is intercepted by a **client-side Cloudflare Gateway policy** on the demo machine's egress (302 to `blocked.teams.cloudflare.com`) before it leaves the network — that's the local network's SWG, not the zone's content scanning; demo malicious-uploads detection from a clean network/device or after adjusting that Gateway policy.
-- [ ] Finalize `README.md` / `DOCUMENTATION.txt` / `API_REFERENCE.md`
+- [x] Finalize `README.md` / `DOCUMENTATION.txt` / `API_REFERENCE.md`
 
 ### Phase 5 — Optional Stretch
 - [ ] mTLS protection for `/api/internal/*` routes
