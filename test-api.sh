@@ -28,6 +28,14 @@ BASE_URL="${BASE_URL:-https://banking.puregroundscoffee.com}"
 USERNAME="${DEMO_USERNAME:-chris.brown}"
 PASSWORD="${DEMO_PASSWORD:-cbrown123}"
 
+# Cross-platform curl: Windows Git Bash needs curl.exe + --ssl-no-revoke
+# (TLS revocation checks fail on that network); macOS/Linux/WSL use plain curl
+# and reject the Schannel-only flag. mktemp templates differ too.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) CURL=(curl.exe -s --ssl-no-revoke) ;;
+  *)                    CURL=(curl -s) ;;
+esac
+
 PASS=0; FAIL=0; SKIP=0
 
 ok()   { PASS=$((PASS+1)); echo "PASS  $1"; }
@@ -38,13 +46,13 @@ skip() { SKIP=$((SKIP+1)); echo "SKIP  $1 ($2)"; }
 # Prints: "<status> <body>"
 http() {
   local method="$1" path="$2"; shift 2
-  local args=(-s -X "$method" -H "Authorization: Bearer $TOKEN" --ssl-no-revoke)
+  local args=(-s -X "$method" -H "Authorization: Bearer $TOKEN")
   if [ -n "$1" ]; then
     if [ "${1#@}" != "$1" ]; then args+=(-F "file=${1}"); shift
     else args+=(-H "Content-Type: application/json" -d "$1"); shift; fi
   fi
-  local tmp; tmp=$(mktemp)
-  local status; status=$(curl.exe "${args[@]}" "$@" -o "$tmp" -w "%{http_code}" "$BASE_URL$path")
+  local tmp; tmp=$(mktemp /tmp/pgc-tapi-XXXXXX)
+  local status; status=$("${CURL[@]}" "${args[@]}" "$@" -o "$tmp" -w "%{http_code}" "$BASE_URL$path")
   echo "$status $(cat "$tmp")"
   rm -f "$tmp"
 }
@@ -61,14 +69,14 @@ echo "Target: $BASE_URL (user: $USERNAME)"
 echo
 
 # --- Auth -----------------------------------------------------------------
-UNAUTH=$(curl.exe -s -w " %{http_code}" --ssl-no-revoke -o /tmp/tapi.$$ "$BASE_URL/api/accounts" && true)
+UNAUTH=$("${CURL[@]}" -s -w " %{http_code}" -o /tmp/tapi.$$ "$BASE_URL/api/accounts" && true)
 expect "GET /api/accounts without token -> 401" "401" "401 $(cat /tmp/tapi.$$)"; rm -f /tmp/tapi.$$
 
-expect "POST /api/auth/login empty body -> 400" "400" "$(curl.exe -s -w '%{http_code} ' --ssl-no-revoke -X POST -H 'Content-Type: application/json' -d '{}' -o /tmp/tapi.$$ "$BASE_URL/api/auth/login"; cat /tmp/tapi.$$)"; rm -f /tmp/tapi.$$
+expect "POST /api/auth/login empty body -> 400" "400" "$("${CURL[@]}" -s -w '%{http_code} ' -X POST -H 'Content-Type: application/json' -d '{}' -o /tmp/tapi.$$ "$BASE_URL/api/auth/login"; cat /tmp/tapi.$$)"; rm -f /tmp/tapi.$$
 
-expect "POST /api/auth/login wrong password -> 401" "401" "$(curl.exe -s -w '%{http_code} ' --ssl-no-revoke -X POST -H 'Content-Type: application/json' -d "{\"username\":\"$USERNAME\",\"password\":\"wrong-password\"}" -o /tmp/tapi.$$ "$BASE_URL/api/auth/login"; cat /tmp/tapi.$$)"; rm -f /tmp/tapi.$$
+expect "POST /api/auth/login wrong password -> 401" "401" "$("${CURL[@]}" -s -w '%{http_code} ' -X POST -H 'Content-Type: application/json' -d "{\"username\":\"$USERNAME\",\"password\":\"wrong-password\"}" -o /tmp/tapi.$$ "$BASE_URL/api/auth/login"; cat /tmp/tapi.$$)"; rm -f /tmp/tapi.$$
 
-LOGIN=$(curl.exe -s --ssl-no-revoke -X POST -H 'Content-Type: application/json' -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" "$BASE_URL/api/auth/login")
+LOGIN=$("${CURL[@]}" -X POST -H 'Content-Type: application/json' -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" "$BASE_URL/api/auth/login")
 TOKEN=$(first_json_field "$LOGIN" token)
 if [ -n "$TOKEN" ]; then ok "POST /api/auth/login good credentials -> 200 + token"; else echo "FATAL: login failed, aborting: $LOGIN"; exit 1; fi
 
@@ -135,7 +143,7 @@ expect "POST /api/notifications/read-all -> 200" "200" "$(http POST /api/notific
 expect "GET /api/audit-log -> 200" "200" "$(http GET /api/audit-log)"
 
 # --- Uploads (create + delete round-trip) ---------------------------------
-UP_TMP=$(mktemp --suffix=.txt); echo "test-api round-trip file - safe to delete" > "$UP_TMP"
+UP_DIR=$(mktemp -d /tmp/pgc-upload-XXXXXXXX); UP_TMP="$UP_DIR/roundtrip.txt"; echo "test-api round-trip file - safe to delete" > "$UP_TMP"
 UPLOAD=$(http POST /api/uploads "@$UP_TMP")
 expect "POST /api/uploads -> 201" "201" "$UPLOAD"
 UPLOAD_ID=$(first_json_field "$UPLOAD" id)
@@ -144,7 +152,7 @@ if [ -n "$UPLOAD_ID" ]; then
   expect "GET /api/uploads/:id (download) -> 200" "200" "$(http GET "/api/uploads/$UPLOAD_ID")"
   expect "DELETE /api/uploads/:id -> 200" "200" "$(http DELETE "/api/uploads/$UPLOAD_ID")"
 else skip "upload list/download/delete" "upload failed"; fi
-rm -f "$UP_TMP"
+rm -rf "$UP_DIR"
 
 echo
 echo "=== Summary: $PASS passed, $FAIL failed, $SKIP skipped ==="

@@ -20,6 +20,13 @@
 # and API6 spams >=$2000 applications so nothing disburses. Every run adds its
 # residue to the demo user's history — it reconciles with balances by design.
 
+# Cross-platform curl: Windows Git Bash needs curl.exe + --ssl-no-revoke;
+# macOS/Linux/WSL use plain curl and reject the Schannel-only flag.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) CURL=(curl.exe -s --ssl-no-revoke) ;;
+  *)                    CURL=(curl -s) ;;
+esac
+
 MODE="${1:-before}"
 [ "$MODE" = "after" ] && AFTER=1 || AFTER=0
 BASE_URL="${BASE_URL:-https://banking.puregroundscoffee.com}"
@@ -30,7 +37,7 @@ VULN=0; BLOCKED=0; ODD=0
 
 status() { # status <path>  -> prints HTTP status, body to /tmp/atk.body
   local path="$1"; shift
-  local code; code=$(curl.exe -s "${CURL_AUTH[@]}" --ssl-no-revoke "$@" -o /tmp/atk.body -w "%{http_code}" "$BASE_URL$path")
+  local code; code=$("${CURL[@]}" -s "${CURL_AUTH[@]}" "$@" -o /tmp/atk.body -w "%{http_code}" "$BASE_URL$path")
   echo "$code"
 }
 
@@ -50,12 +57,12 @@ echo "Target: $BASE_URL (attacker identity: $USERNAME)"
 echo
 
 # Attacker session: an ordinary, legitimate customer login. --------
-LOGIN=$(curl.exe -s --ssl-no-revoke -X POST -H 'Content-Type: application/json' \
+LOGIN=$("${CURL[@]}" -X POST -H 'Content-Type: application/json' \
   -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" "$BASE_URL/api/auth/login")
 TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' <<<"$LOGIN" | head -1)
 [ -z "$TOKEN" ] && { echo "FATAL: attacker login failed: $LOGIN"; exit 1; }
 CURL_AUTH=(-H "Authorization: Bearer $TOKEN")
-ACCOUNTS=$(curl.exe -s "${CURL_AUTH[@]}" --ssl-no-revoke "$BASE_URL/api/accounts")
+ACCOUNTS=$("${CURL[@]}" -s "${CURL_AUTH[@]}" "$BASE_URL/api/accounts")
 SAVINGS_ID=$(sed -n 's/.*{"id":"\([^"]*\)"[^{]*"account_type":"savings".*/\1/p' <<<"$ACCOUNTS" | head -1)
 echo "attacker authenticated (Regular role); savings account $SAVINGS_ID"
 echo
@@ -63,7 +70,7 @@ echo
 # --- API2: Broken authentication ------------------------------------------
 echo "--- API2 Broken Authentication ---"
 echo "curl $BASE_URL/api/internal/debug        (no credentials at all)"
-code=$(curl.exe -s --ssl-no-revoke -o /tmp/atk.body -w "%{http_code}" "$BASE_URL/api/internal/debug")
+code=$("${CURL[@]}" -o /tmp/atk.body -w "%{http_code}" "$BASE_URL/api/internal/debug")
 if grep -q password_hash /tmp/atk.body; then verdict "API2 /api/internal/debug" yes "unauthenticated dump of user table incl. password hashes"
 elif [ "$code" = "403" ] || [ "$code" = "401" ]; then verdict "API2 /api/internal/debug" no "$code (JWT validation rule)"
 else verdict "API2 /api/internal/debug" odd "$code"; fi
@@ -102,7 +109,7 @@ echo "--- API1 Broken Object Level Authorization ---"
 IDS=$(grep -oE '"id":"[0-9a-f-]{36}"' /dev/null 2>/dev/null)
 # Enumerate targets from the API2 dump if it answered; otherwise try the
 # demo user's own id plus every id the admin list leaked, whichever exists.
-code=$(curl.exe -s --ssl-no-revoke -o /tmp/atk.body -w "%{http_code}" "$BASE_URL/api/internal/debug")
+code=$("${CURL[@]}" -o /tmp/atk.body -w "%{http_code}" "$BASE_URL/api/internal/debug")
 IDS=$(grep -oE '"id":"[0-9a-f-]{36}"' /tmp/atk.body | cut -d'"' -f4 | sort -u | head -6)
 [ -z "$IDS" ] && code=$(status /api/admin/users) && IDS=$(grep -oE '"id":"[0-9a-f-]{36}"' /tmp/atk.body | cut -d'"' -f4 | sort -u | head -6)
 # Fallback: known-seeded user id, so the enumeration attempt itself is still
@@ -185,14 +192,14 @@ echo
 
 # --- Companion surfaces (not OWASP-numbered) ---------------------------------------
 echo "--- Companion: WAF managed rules / content scanning ---"
-code=$(curl.exe -s "${CURL_AUTH[@]}" --ssl-no-revoke -o /tmp/atk.body -w "%{http_code}" \
+code=$("${CURL[@]}" -s "${CURL_AUTH[@]}" -o /tmp/atk.body -w "%{http_code}" \
   "$BASE_URL/api/transactions?sort=amount%3BDROP%20TABLE%20users%3B--")
 echo "SQLi probe (?sort=amount;DROP TABLE users;--) -> HTTP $code"
 if [ "$code" = "403" ]; then echo "INFO       managed WAF blocked it at the edge (observed since Phase 2 — expected in BOTH runs)"; fi
 
-EICAR_FILE=$(mktemp --suffix=.com)
+EICAR_DIR=$(mktemp -d /tmp/pgc-eicar-XXXXXXXX); EICAR_FILE="$EICAR_DIR/eicar.com"
 printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > "$EICAR_FILE"
-code=$(curl.exe -s "${CURL_AUTH[@]}" --ssl-no-revoke -o /tmp/atk.body -w "%{http_code}" \
+code=$("${CURL[@]}" -s "${CURL_AUTH[@]}" -o /tmp/atk.body -w "%{http_code}" \
   -X POST -F "file=@$EICAR_FILE" "$BASE_URL/api/uploads")
 if [ "$code" = "201" ]; then
   EICAR_ID=$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' /tmp/atk.body | head -1)
@@ -201,7 +208,7 @@ if [ "$code" = "201" ]; then
 elif [ "$code" = "403" ]; then verdict "EICAR upload" no "$code (malicious uploads detection)"
 elif [ "$code" = "302" ]; then BLOCKED=$((BLOCKED+1)); echo "CLIENT-BLOCKED EICAR upload (302 to a Cloudflare Gateway block page — the demo machine's own network proxy intercepted it before it left the machine; demo content scanning from a clean network or device instead)"
 else verdict "EICAR upload" odd "$code"; fi
-rm -f "$EICAR_FILE"
+rm -rf "$EICAR_DIR"
 echo
 
 echo "=== Summary ==="
