@@ -181,10 +181,11 @@ git pull</pre>
 
 <div class="step">
   <h4>Step 4 · Load the attacker session (Terminal)</h4>
-  <p>Paste this whole block. It logs in as the attacker's ordinary customer (<code>chris.brown</code>),
-  stores the JWT in <code>$TOKEN</code>, and finds that user's savings-account id in <code>$SAVINGS_ID</code>.
-  Every attack command in Tab 2 assumes these exist. Tokens last 24h; <b>re-paste the block in any new
-  Terminal window</b>.</p>
+  <p>Every attack in Tab 2 runs as a logged-in customer — <b>chris.brown</b>, an ordinary Regular user.
+  This step fetches his <b>session token</b> (a JWT: think of it as a 24-hour key card the app issues after
+  a correct password) and stores it in your Terminal so every later command can reuse it.</p>
+
+  <p>Paste this <b>entire block</b> into Terminal in one go:</p>
 <pre>BASE=https://banking.puregroundscoffee.com
 
 TOKEN=$(curl -s -X POST \
@@ -196,20 +197,76 @@ SAVINGS_ID=$(curl -s -H "Authorization: Bearer $TOKEN" \
   $BASE/api/accounts | sed -n 's/.*{"id":"\([^"]*\)"[^{]*"account_type":"savings".*/\1/p' | head -1)
 
 echo "token loaded, savings account $SAVINGS_ID"</pre>
-  <p><b>Success looks like:</b> the echo prints a UUID. Note: login is capped at 5 attempts/minute per
-  username — if you get a 429, wait a minute.</p>
+
+  <h3>What each line does</h3>
+  <table>
+    <tr><th>Line</th><th>What it does</th></tr>
+    <tr><td><code>BASE=…</code></td><td>Saves the app's address in a variable named <code>BASE</code> so commands can just write <code>$BASE/api/…</code> instead of the long URL.</td></tr>
+    <tr><td><code>TOKEN=$(curl … login …)</code></td><td>Calls <code>POST /api/auth/login</code> with chris.brown's username and password as JSON. The app answers with JSON containing <code>"token":"eyJ…"</code>. The <code>sed</code> at the end of the pipe (<code>|</code>) pulls just the token text out of that JSON, and <code>TOKEN=$(…)</code> stores it in a variable.</td></tr>
+    <tr><td><code>curl</code> flags</td><td><code>-s</code> = silent (no progress meter) · <code>-X POST</code> = make it a POST · <code>-H …</code> = add an HTTP header · <code>-d …</code> = the request body.</td></tr>
+    <tr><td><code>SAVINGS_ID=$(curl … accounts …)</code></td><td>Calls <code>GET /api/accounts</code> with the header <code>Authorization: Bearer $TOKEN</code> — that's how the app knows it's chris.brown asking — then <code>sed</code> picks out the id of his <b>savings</b> account. Attacks that move money need a destination account id; this is it.</td></tr>
+    <tr><td><code>echo …</code></td><td>Prints confirmation so you can see it worked.</td></tr>
+  </table>
+
+  <p><b>Success looks like:</b> <code>token loaded, savings account 8f3c…(a long UUID)</code>.
+  If instead you see an empty id, the login failed — check you pasted the whole block, then wait 60 seconds
+  and try again (login is capped at 5 attempts per minute).</p>
+
+  <div class="box warn"><b>Two things beginners trip on:</b><br>
+  ① These variables live <b>only inside this Terminal window</b>. Open a new window, or close this one, and
+  you must paste the block again.<br>
+  ② The token expires after 24 hours. Same fix: re-paste the block.</div>
 </div>
 
 <div class="step">
   <h4>Step 5 · Rehearse end-to-end (the day before, ~20 minutes)</h4>
+  <p>Two scripts do the rehearsal. You don't need to read or edit them — you run them and read their
+  output. Both are just sequences of the same kind of <code>curl</code> calls you made by hand in Step 4.</p>
+
+  <h3>Script 1 — <code>./test-api.sh</code> (the "legitimate customer" check)</h3>
+  <pre>./test-api.sh</pre>
+  <p><b>What it does:</b> walks every <i>legitimate</i> API endpoint as chris.brown and checks the app
+  responds correctly — 39 checks in one run. It's deliberately gentle:</p>
+  <ul class="tight">
+    <li>Read checks (list accounts, transactions, cards, …) expect HTTP <b>200</b>.</li>
+    <li>Write checks send an <i>empty</i> body on purpose and expect HTTP <b>400</b> ("bad request") — enough to prove the endpoint works without creating junk data.</li>
+    <li>The few real mutations clean up after themselves: it creates a payee and deletes it, uploads a file and deletes it, freezes and un-freezes an account. You can run it as often as you like.</li>
+  </ul>
+  <p><b>How to read the output:</b> every check prints one line starting with <code>PASS</code> (good) or
+  <code>FAIL  … (expected 200, got 403)</code> (bad — the parenthesis tells you what it wanted vs. what
+  happened). At the end: <code>=== Summary: 39 passed, 0 failed, 0 skipped ===</code>. <b>Anything but
+  39 passed means stop and fix before demo day</b> — most common cause: you rehearsed with protections
+  still armed, which turns some of these into edge-blocked 403s.</p>
+  <p><b>Why it matters in the POC:</b> this is your "don't break the bank" proof. After the protections are
+  armed live, you re-run this to show the customer's real customers would never notice them.</p>
+
+  <h3>Script 2 — <code>./attack-simulation.sh</code> (the "attacker" check)</h3>
+  <pre>./attack-simulation.sh before</pre>
+  <p><b>What it does:</b> logs in as the attacker and runs all nine exploit techniques against the app —
+  dumping the user table, calling a forgotten v1 API, force-approving a loan as a regular user, harvesting
+  everyone's balances, and so on. The word <code>before</code> sets the expectation: <i>with protections
+  Off, every attack should succeed</i>.</p>
+  <p><b>How to read the output:</b> each attack prints one line:</p>
+  <ul class="tight">
+    <li><code>VULNERABLE  API5 force-approve (pending $3000 loan approved+disbursed…)</code> — the attack worked. In a <b>before</b> run, every line should say this. That's the point: you've proven the holes are real.</li>
+    <li><code>BLOCKED    API5 force-approve (403…)</code> — the edge stopped it. This is what an <b>after</b> run (<code>./attack-simulation.sh after</code>, with everything armed in the dashboard) should print for every line.</li>
+    <li><code>UNEXPECTED</code> / <code>NOT-BLOCKED</code> — something is off (a toggle in the wrong state). Fix before demo day.</li>
+  </ul>
+  <p>Labels are OWASP-style (<code>API1</code>…<code>API9</code>); Tab 2 groups the same attacks by POC
+  use case instead — same attacks, just presented in the customer's language. Damage is contained by
+  design: the burst transfers move $0.01, the fraudulent loan is created by the script itself and the
+  app keeps such loans in review, and every run's residue reconciles with account balances — nothing
+  ever needs cleanup.</p>
+
+  <h3>The full rehearsal loop</h3>
   <pre>./test-api.sh                  <span class="c"># expect: 39 passed, 0 failed</span>
 ./attack-simulation.sh before  <span class="c"># expect: every line VULNERABLE</span></pre>
-  <p>Then arm every toggle from Step 3 <b>in the dashboard</b> (this doubles as your click-path rehearsal)
-  and run <code>./attack-simulation.sh after</code> — expect every line BLOCKED. Finish by returning every
-  toggle to the staging state (all rules Off, schema validation Log). The script prints OWASP-style labels
-  (API1–API9); Tab 2 groups the same attacks by POC use case — same attacks, different order. Residue from
-  runs (pending $3000 loans, $0.01 transfers) reconciles with account balances by design — nothing needs
-  resetting.</p>
+  <p>Then arm every toggle from Step 3 <b>in the dashboard</b> (this doubles as your click-path rehearsal
+  for Steps 3.2–3.5) and run:</p>
+  <pre>./attack-simulation.sh after   <span class="c"># expect: every line BLOCKED
+</span>./test-api.sh                  <span class="c"># armed, still: 39 passed, 0 failed</span></pre>
+  <p>Finish by returning the zone to staging: every <code>PGC demo:</code> toggle Off, schema validation
+  back to Log (Step 3's one-line checklist).</p>
   <div class="box good"><b>Verification status (measured, not planned):</b> test-api.sh 39/39 PASS ·
   attack-simulation.sh before 11/11 VULNERABLE · after 11/11 BLOCKED · legitimate traffic re-tested while
   armed — all 200s.</div>
