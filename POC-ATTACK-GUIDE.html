@@ -104,18 +104,79 @@ git pull</pre>
 
 <div class="step">
   <h4>Step 3 · Confirm the zone is staged — in the dashboard</h4>
-  <p>Everything below should be <b>already created but switched OFF</b> (the staging state). You are
-  verifying, not configuring. Walk each location once so the paths are muscle memory before the meeting.</p>
+  <p>Do this click by click, once, the day before. Everything below should <b>already exist but be switched
+  Off</b> (the staging state) — you are verifying, and learning the exact paths you'll walk live in front of
+  the customer. If anything is missing, each subsection includes a spec table so you can rebuild it in
+  under a minute.</p>
+
+  <h3>3.1 — Open the zone</h3>
+  <ol class="tight">
+    <li>Go to <code>https://dash.cloudflare.com</code> and log in.</li>
+    <li>If asked to pick an account, choose <b>Pure Grounds Coffee Co.</b></li>
+    <li>Click the domain <b>puregroundscoffee.com</b>. You land on the zone's Overview page.</li>
+    <li>Everything in this guide lives in the left sidebar under <b>Security</b>.</li>
+  </ol>
+
+  <h3>3.2 — The four WAF custom rules</h3>
+  <ol class="tight">
+    <li>Sidebar: <b>Security → WAF</b>.</li>
+    <li>Click the <b>Custom rules</b> tab.</li>
+    <li>You should see four rules named <code>PGC demo: …</code>. For each, the <b>Enabled</b> toggle must be <b>Off</b> (gray). If one shows On (blue), click the toggle to turn it Off.</li>
+  </ol>
   <table>
-    <tr><th>Dashboard location</th><th>What should be there</th><th>Staging state</th></tr>
-    <tr><td><b>Security → WAF → Custom rules</b></td><td>4 rules: <code>PGC demo: fallthrough block…</code>, <code>…block unauthenticated /api/internal/debug</code>, <code>…block malicious uploads (content scanning)</code>, <code>…block any query string on /api/profile</code></td><td>Each toggle <b>Off</b></td></tr>
-    <tr><td><b>Security → WAF → Rate limiting rules</b></td><td>3 rules: <code>PGC demo: BOLA enumeration…</code>, <code>…express-transfer burst…</code>, <code>…loan/investment spam…</code></td><td>Each toggle <b>Off</b></td></tr>
-    <tr><td><b>Security → WAF → Managed rules</b></td><td>Deployment <code>PGC demo: exposed credential check on login</code></td><td><b>Off</b></td></tr>
-    <tr><td><b>Security → API Shield → Schema Validation</b></td><td>Schema <code>pgc-bank-openapi</code> uploaded; session identifier = JWT <code>sub</code> claim (API Shield → Settings)</td><td>Default action <b>Log</b></td></tr>
-    <tr><td><b>Security → Data → Sensitive Data Detection</b></td><td>Cloudflare Sensitive Data Detection managed ruleset deployed</td><td><b>On — always</b> (detect-only, never blocks)</td></tr>
+    <tr><th>Rule name (exact)</th><th>Expression</th><th>Action</th></tr>
+    <tr><td><code>PGC demo: fallthrough block (ops outside the OpenAPI schema)</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.uri.path matches "^/api/" and cf.api_gateway.fallthrough_detected)</code></td><td>Block</td></tr>
+    <tr><td><code>PGC demo: block unauthenticated /api/internal/debug</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.uri.path eq "/api/internal/debug" and not (http.request.headers["authorization"][0] contains "Bearer "))</code></td><td>Block</td></tr>
+    <tr><td><code>PGC demo: block malicious uploads (content scanning)</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and cf.waf.content_scan.has_malicious_obj and http.request.uri.path eq "/api/uploads")</code></td><td>Block</td></tr>
+    <tr><td><code>PGC demo: block any query string on /api/profile</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.uri.path eq "/api/profile" and http.request.uri.query ne "")</code></td><td>Block</td></tr>
   </table>
-  <p>If anything is missing or in the wrong state: fix it now, in the dashboard (toggle the offending
-  rule off; set schema validation back to Log). Don't leave this to demo morning.</p>
+  <p><b>If one is missing:</b> on the same tab → <b>Create rule → Custom rule</b> → name it exactly as in the
+  table → switch the expression editor to <b>Edit expression</b> and paste the expression → set action
+  <b>Block</b> → <b>Deploy</b> → then toggle it <b>Off</b> so the zone stays staged.</p>
+
+  <h3>3.3 — The three rate limiting rules</h3>
+  <ol class="tight">
+    <li>Still under <b>Security → WAF</b>, click the <b>Rate limiting rules</b> tab.</li>
+    <li>You should see three <code>PGC demo: …</code> rules, each <b>Off</b>. Correct any that are On.</li>
+  </ol>
+  <table>
+    <tr><th>Rule name (exact)</th><th>Match expression</th><th>Rate</th><th>Action / timeout</th></tr>
+    <tr><td><code>PGC demo: BOLA enumeration rate limit</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.uri.path matches "^/api/users/[^/]+/balance$")</code></td><td>5 requests / 30 seconds</td><td>Block / 60 seconds</td></tr>
+    <tr><td><code>PGC demo: express-transfer burst rate limit</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.uri.path eq "/api/transfers/express")</code></td><td>10 requests / 60 seconds</td><td>Block / 120 seconds</td></tr>
+    <tr><td><code>PGC demo: loan/investment spam rate limit</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.method eq "POST" and (http.request.uri.path eq "/api/loans/apply" or http.request.uri.path eq "/api/investments"))</code></td><td>5 requests / 60 seconds</td><td>Block / 120 seconds</td></tr>
+  </table>
+  <p><b>If one is missing:</b> same tab → <b>Create rule</b> → name it → paste the expression under
+  "When incoming requests match…" → set the rate and action from the table → <b>Characteristics:</b> leave
+  the default (<i>IP with NAT support</i> = <code>ip.src + cf.colo.id</code>) → Deploy → toggle <b>Off</b>.</p>
+
+  <h3>3.4 — The exposed credential check deployment</h3>
+  <ol class="tight">
+    <li>Sidebar: <b>Security → WAF</b> → <b>Managed rules</b> tab.</li>
+    <li>In the list of deployed rulesets, find the entry named <code>PGC demo: exposed credential check on login</code>.</li>
+    <li>Its status must be <b>Off</b> for staging. If it's On, disable it now.</li>
+  </ol>
+  <p><b>If it's missing:</b> it's a host-scoped deployment of the <i>Cloudflare Exposed Credentials Check</i>
+  ruleset — recreate it from this tab with scope <code>hostname equals banking.puregroundscoffee.com</code>
+  and the default (log) action. If the scope UI isn't obvious, don't improvise — confirm the exact path
+  during your Step 5 rehearsal when you're not on stage.</p>
+
+  <h3>3.5 — API Shield: schema validation + session identifier</h3>
+  <ol class="tight">
+    <li>Sidebar: <b>Security → API Shield</b>.</li>
+    <li>Open <b>Schema Validation</b>: the schema <code>pgc-bank-openapi</code> must be listed as uploaded and enabled.</li>
+    <li>Find the <b>default action</b> setting — it must be <b>Log</b> (staging), not Block. You'll flip this live in UC-5.</li>
+    <li>Open API Shield <b>Settings</b>: <b>Session identifiers</b> must include the JWT <code>sub</code> claim.</li>
+  </ol>
+
+  <h3>3.6 — Sensitive Data Detection (stays On, always)</h3>
+  <ol class="tight">
+    <li>Sidebar: <b>Security → Data → Sensitive Data Detection</b>.</li>
+    <li>The Cloudflare Sensitive Data Detection managed ruleset must show as deployed/enabled.</li>
+    <li><b>Do not turn it off.</b> It scans responses and logs matches but never blocks — that visibility is UC-2's evidence, and it needs to be collecting during every BEFORE run.</li>
+  </ol>
+
+  <div class="box good"><b>Staging checklist, one line:</b> 4 custom rules Off · 3 rate limits Off ·
+  exposed-credential deployment Off · schema validation at Log · SDD On. That's the whole state.</div>
 </div>
 
 <div class="step">
@@ -156,10 +217,10 @@ echo "token loaded, savings account $SAVINGS_ID"</pre>
 
 <div class="step">
   <h4>Step 6 · Demo morning (2 minutes)</h4>
-  <div class="checkline"><div class="boxit"></div><div>Dashboard: re-walk the Step 3 table — everything Off, schema at Log.</div></div>
+  <div class="checkline"><div class="boxit"></div><div>Dashboard: re-walk Step 3 subsections 3.2–3.6 — the one-line staging checklist holds (4 custom rules Off · 3 rate limits Off · exposed-credential deployment Off · schema at Log · SDD On).</div></div>
   <div class="checkline"><div class="boxit"></div><div>Paste the Step 4 bootstrap block into a fresh Terminal window.</div></div>
   <div class="checkline"><div class="boxit"></div><div>Browser tabs open: zone → <b>Security → Events</b>; <b>Security → API Shield</b> (Discovery / Web Assets); <b>Security → WAF</b> (your toggling station for the meeting); the app logged in as <b>admin</b>; a private window logged in as <b>chris.brown</b> (the attacker's UI session — the homepage upload button uses it).</div></div>
-  <div class="checkline"><div class="boxit"></div><div>If the room goes sideways: the staging state is just "everything in the Step 3 table Off" — you can always get back in under a minute.</div></div>
+  <div class="checkline"><div class="boxit"></div><div>If the room goes sideways: the staging state is just the Step 3 one-line checklist — you can always get back in under a minute.</div></div>
 </div>
 </section>
 
@@ -222,9 +283,12 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
     </ul>
   </div>
 
-  <div class="arm"><b class="tag">Arm in the dashboard</b><br>
-  <b>Security → WAF → Custom rules</b> → <code>PGC demo: block malicious uploads (content scanning)</code> → toggle <b>On</b>.
-  Point at the expression while you're there: <code>cf.waf.content_scan.has_malicious_obj</code> — one rule a customer admin writes in a minute.</div>
+  <div class="arm"><b class="tag">Arm in the dashboard</b>
+  <ol class="tight">
+    <li>Sidebar: <b>Security → WAF</b> → <b>Custom rules</b> tab.</li>
+    <li>Find <code>PGC demo: block malicious uploads (content scanning)</code> and set its toggle <b>On</b>.</li>
+    <li>Point at the expression while you're there: <code>cf.waf.content_scan.has_malicious_obj</code> — one rule a customer admin writes in a minute.</li>
+  </ol></div>
 
   <div class="kv">
     <b>Dashboard beat</b><span><b>Security → Events</b>, service <i>Content Scanning</i> — the matched verdict per attempt.</span>
@@ -262,11 +326,14 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
     </ul>
   </div>
 
-  <div class="arm"><b class="tag">Arm in the dashboard</b><br>
-  The detection ruleset itself stays On at all times (Security → Data → Sensitive Data Detection) — that's
-  what logged every leak you just generated. What you arm here are the <b>access-path blocks</b>:<br>
-  <b>Security → WAF → Custom rules</b> → toggle On both <code>PGC demo: block unauthenticated /api/internal/debug</code>
-  and <code>PGC demo: block any query string on /api/profile</code>.</div>
+  <div class="arm"><b class="tag">Arm in the dashboard</b>
+  <ol class="tight">
+    <li>The detection ruleset itself stays On at all times (<b>Security → Data → Sensitive Data Detection</b>) — that's what logged every leak you just generated. Don't touch it.</li>
+    <li>What you arm here are the <b>access-path blocks</b>: sidebar <b>Security → WAF</b> → <b>Custom rules</b> tab.</li>
+    <li>Set <b>On</b>: <code>PGC demo: block unauthenticated /api/internal/debug</code>.</li>
+    <li>Set <b>On</b>: <code>PGC demo: block any query string on /api/profile</code>.</li>
+    <li>Re-run Attack 2.1 and 2.2 — both now 403.</li>
+  </ol></div>
 
   <div class="kv">
     <b>Dashboard beat</b><span><b>Security → Events</b> — matches logged by the Sensitive Data Detection service, one per leaky response. Then <b>Security → API Shield → Web Assets</b> — the endpoint rows carry the sensitive-data label.</span>
@@ -306,8 +373,12 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
     </ul>
   </div>
 
-  <div class="arm"><b class="tag">Arm in the dashboard</b><br>
-  <b>Security → WAF → Managed rules</b> → deployment <code>PGC demo: exposed credential check on login</code> → toggle <b>On</b>.
+  <div class="arm"><b class="tag">Arm in the dashboard</b>
+  <ol class="tight">
+    <li>Sidebar: <b>Security → WAF</b> → <b>Managed rules</b> tab.</li>
+    <li>Find the deployment <code>PGC demo: exposed credential check on login</code> and set it <b>On</b>.</li>
+    <li>Note for the room: its action is log-only by default — detection first, raise to block later.</li>
+  </ol>
   (Confirm the exact placement during the Step 5 rehearsal — managed-ruleset deployments list with the other managed entries.)</div>
 
   <div class="box warn"><b>Honest caveat:</b> the check fires only on pairs actually present in the breach
@@ -354,10 +425,13 @@ done</pre>
     </ul>
   </div>
 
-  <div class="arm"><b class="tag">Arm in the dashboard</b><br>
-  <b>Security → WAF → Rate limiting rules</b> → toggle On <code>PGC demo: express-transfer burst rate limit</code>
-  and <code>PGC demo: BOLA enumeration rate limit</code>. Show the counting expression while you're there —
-  <code>ip.src + cf.colo.id</code>, 10 requests in 60s — and say it can just as easily count per session token or API key.</div>
+  <div class="arm"><b class="tag">Arm in the dashboard</b>
+  <ol class="tight">
+    <li>Sidebar: <b>Security → WAF</b> → <b>Rate limiting rules</b> tab.</li>
+    <li>Set <b>On</b>: <code>PGC demo: express-transfer burst rate limit</code>.</li>
+    <li>Set <b>On</b>: <code>PGC demo: BOLA enumeration rate limit</code>.</li>
+    <li>Open either rule and show the counting expression: <code>ip.src + cf.colo.id</code>, 10 requests in 60s — then say it can just as easily count per session token, header, or JWT claim.</li>
+  </ol></div>
 
   <div class="kv">
     <b>Dashboard beat</b><span><b>Security → Events</b>, last 15 minutes — every throttled request named by rule. Forward-looking pair: <b>Volumetric Abuse Detection</b> learns per-endpoint baselines and recommends limits automatically (needs weeks of production traffic — positioned, not demoed).</span>
@@ -396,11 +470,12 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/accounts?userId=f49a7d79
     </ul>
   </div>
 
-  <div class="arm"><b class="tag">Arm in the dashboard</b><br>
-  Two moves, both worth narrating: ① <b>Security → API Shield → Schema Validation</b> → default action
-  <b>Log → Block</b> ("the uploaded OpenAPI contract is now enforced"). ② <b>Security → WAF → Custom rules</b> →
-  <code>PGC demo: fallthrough block (ops outside the OpenAPI schema)</code> → On ("and anything the contract
-  doesn't mention is assumed hostile").</div>
+  <div class="arm"><b class="tag">Arm in the dashboard</b>
+  <ol class="tight">
+    <li>Sidebar: <b>Security → API Shield</b> → <b>Schema Validation</b> → change the default action from <b>Log</b> to <b>Block</b>. Say: "the uploaded OpenAPI contract is now enforced."</li>
+    <li>Sidebar: <b>Security → WAF</b> → <b>Custom rules</b> tab → set <b>On</b>: <code>PGC demo: fallthrough block (ops outside the OpenAPI schema)</code>. Say: "and anything the contract doesn't mention is assumed hostile."</li>
+    <li>Re-run Attack 5.1 and 5.2 — both die at the edge.</li>
+  </ol></div>
 
   <div class="kv">
     <b>Finale</b><span>With everything now armed: <code>./attack-simulation.sh after</code> — every line BLOCKED — then <code>./test-api.sh</code> → 39/39, legitimate traffic untouched. That's the whole story in two commands.</span>
@@ -410,7 +485,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/accounts?userId=f49a7d79
     oversized JSON body to <code>/api/transfers/batch</code> → automatic 413 plan-tier body limit.</span>
   </div>
   <div class="box"><b>Leave the zone staged:</b> before you close — all 8 <code>PGC demo:</code> toggles
-  back Off + schema validation back to Log (the Step 3 table). Forward-looking close: ML posture features —
+  back Off + schema validation back to Log (the Step 3 checklist). Forward-looking close: ML posture features —
   BOLA enumeration risk labels, Volumetric Abuse recommendations — accrue over weeks of production traffic;
   today showed the deterministic layer.</div>
 </div>
