@@ -469,15 +469,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       summary: Upload a file (content scanning surface — unrestricted by design)
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file]
-              properties:
-                file: { type: string, format: binary }
+      # NOTE: no requestBody here on purpose — Cloudflare schema validation
+      # cannot validate multipart/form-data bodies (dashboard warning "code
+      # 30029 unsupported media type"); declaring one leaves this endpoint
+      # unvalidated AND shows a warning. Malicious-upload protection lives in
+      # the WAF content-scanning rule (cf.waf.content_scan.has_malicious_obj),
+      # not in schema validation. The endpoint + method still register as a
+      # known operation, so fallthrough does not fire on it.
       responses:
         '201': { description: Uploaded }
         '400': { $ref: '#/components/responses/BadRequest' }
