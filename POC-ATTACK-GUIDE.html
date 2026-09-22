@@ -111,6 +111,15 @@ pip3 install pyyaml     <span class="c"># needed by demo-edge-config.py to parse
   <pre>export CLOUDFLARE_API_TOKEN="paste-the-token-here"</pre>
   <p>Set it once per Terminal window (or add the line to <code>~/.zshrc</code> to make it permanent).
   The token is a secret: never paste it into chat, screenshots, or the guide itself.</p>
+  <div class="box"><b>Why does a terminal demo need a Cloudflare API token?</b> The centerpiece of the
+  demo is flipping protection on and off <i>live</i>: <code>python3 scripts/demo-edge-config.py arm</code>
+  turns on eight zone rules and switches schema validation from log to block in one command, and
+  <code>disarm</code> puts it all back. That script is just an API client — it calls the Cloudflare API to
+  toggle the zone's existing <code>PGC demo:</code> rules, and the token is how those calls authenticate.
+  Without it you'd be clicking through the dashboard eight times mid-meeting, and the "nothing redeployed,
+  no code changes — one command" moment wouldn't land. Read-only rehearsal: <code>status</code> uses the
+  same token just to read the zone state. If a customer asks: this is the same API their own automation
+  (Terraform, CI/CD) uses to manage Cloudflare as code.</div>
 </div>
 
 <div class="step">
@@ -177,6 +186,17 @@ echo "token loaded, savings account $SAVINGS_ID"</pre>
 <p>Five use cases from the Metrobank POC plan, executed against the banking demo app. Each use case lists
 the Cloudflare feature it proves, the two attacks, and what to show in the dashboard. Commands assume the
 Tab 1 bootstrap (<code>$TOKEN</code>, <code>$SAVINGS_ID</code>).</p>
+
+<div class="box">
+<b>Why are we attacking this app and not the customer's environment?</b> Say this out loud early — it
+lands well with bank security teams: <i>"We will never fire exploit traffic at your production assets,
+even in a POC. The use cases we already validated on your environment — bot management, managed IP lists,
+account-level WAF, payload inspection — were enabled and evidenced passively, on your real traffic. For the
+use cases that require proving an attack actually gets blocked, we built a deliberately vulnerable bank:
+this demo app contains nine intentional flaws mapped to the OWASP API Security Top 10, on infrastructure we
+own. You watch the attack succeed, then watch the same attack die at the Cloudflare edge."</i> It also makes
+the result unarguable: the before/after contrast on a controlled target shows exactly what the same
+configuration will do in front of their APIs.</div>
 
 <div class="box">
 <b>The demo flow (same for every use case):</b>
