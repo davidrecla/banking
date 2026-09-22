@@ -25,6 +25,16 @@
   code { background: var(--light); padding: 1px 5px; border-radius: 3px; font-size: 12.5px; }
   pre { background: #121212; color: #e8e8e8; padding: 12px 14px; border-radius: 6px; overflow-x: auto; font-size: 12.5px; }
   pre .c { color: #7a7a7a; }
+  .pre-wrap { position: relative; }
+  .copy-btn {
+    position: absolute; top: 8px; right: 8px; z-index: 1;
+    background: #2a2a2a; color: #ddd; border: 1px solid #444; border-radius: 4px;
+    padding: 3px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
+    font-family: "Segoe UI", Arial, sans-serif;
+  }
+  .copy-btn:hover { background: #444; color: #fff; }
+  .copy-btn.copied { background: var(--green); border-color: var(--green); color: #fff; }
+  @media print { .copy-btn { display: none; } }
   .box { border: 1px solid var(--border); border-left: 5px solid var(--red); background: #fafafa; padding: 12px 16px; margin: 14px 0; font-size: 13.5px; }
   .box.warn { border-left-color: var(--amber); background: #fffbea; }
   .box.good { border-left-color: var(--green); background: #f0fff4; }
@@ -182,7 +192,7 @@ git pull</pre>
   One command does it all (run it from the repo folder):</p>
 <pre>source scripts/load-attacker.sh</pre>
   <p><b>Success looks like:</b>
-<pre>attacker session loaded: chris.brown @ https://banking.puregroundscoffee.com
+<pre class="nocopy">attacker session loaded: chris.brown @ https://banking.puregroundscoffee.com
   savings account: 00a22052-b771-…(a UUID)
   extra terminals: source /tmp/pgc-attacker.env
   token expires in 24h — source this script again tomorrow</pre></p>
@@ -582,6 +592,47 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/accounts?userId=f49a7d79
     if (!btn) return;
     bar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
     document.querySelectorAll('.tabpage').forEach(p => p.classList.toggle('active', p.id === btn.dataset.tab));
+  });
+})();
+
+// One-click copy for every runnable code block (both tabs).
+// Copies a CLEAN block: no leading/trailing blank space, no trailing
+// spaces at line ends. Works over file:// too (execCommand fallback).
+(function () {
+  document.querySelectorAll('pre:not(.nocopy)').forEach(function (pre) {
+    var wrap = document.createElement('div');
+    wrap.className = 'pre-wrap';
+    pre.parentNode.insertBefore(wrap, pre);
+    wrap.appendChild(pre);
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', function () {
+      var text = pre.innerText.replace(/[ \t]+$/gm, '').replace(/^\s+|\s+$/g, '');
+      var mark = function () {
+        btn.classList.add('copied');
+        btn.textContent = 'Copied';
+        setTimeout(function () { btn.classList.remove('copied'); btn.textContent = 'Copy'; }, 1500);
+      };
+      function legacy() {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); mark(); }
+        catch (e) { btn.textContent = 'Copy failed'; }
+        document.body.removeChild(ta);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(mark, legacy);
+      } else {
+        legacy();
+      }
+    });
+    wrap.appendChild(btn);
   });
 })();
 </script>
