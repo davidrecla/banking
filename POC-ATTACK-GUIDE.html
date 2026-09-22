@@ -179,40 +179,34 @@ git pull</pre>
 <div class="step">
   <h4>Step 4 · Load the attacker session (Terminal)</h4>
   <p>Every attack in Tab 2 runs as a logged-in customer — <b>chris.brown</b>, an ordinary Regular user.
-  This step fetches his <b>session token</b> (a JWT: think of it as a 24-hour key card the app issues after
-  a correct password) and stores it in your Terminal so every later command can reuse it.</p>
+  One command does it all (run it from the repo folder):</p>
+<pre>source scripts/load-attacker.sh</pre>
+  <p><b>Success looks like:</b>
+<pre>attacker session loaded: chris.brown @ https://banking.puregroundscoffee.com
+  savings account: 00a22052-b771-…(a UUID)
+  extra terminals: source /tmp/pgc-attacker.env
+  token expires in 24h — source this script again tomorrow</pre></p>
 
-  <p>Paste this <b>entire block</b> into Terminal in one go:</p>
-<pre>BASE=https://banking.puregroundscoffee.com
-
-TOKEN=$(curl -s -X POST \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"chris.brown","password":"cbrown123"}' \
-  $BASE/api/auth/login | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-
-SAVINGS_ID=$(curl -s -H "Authorization: Bearer $TOKEN" \
-  $BASE/api/accounts | sed -n 's/.*{"id":"\([^"]*\)"[^{]*"account_type":"savings".*/\1/p' | head -1)
-
-echo "token loaded, savings account $SAVINGS_ID"</pre>
-
-  <h3>What each line does</h3>
-  <table>
-    <tr><th>Line</th><th>What it does</th></tr>
-    <tr><td><code>BASE=…</code></td><td>Saves the app's address in a variable named <code>BASE</code> so commands can just write <code>$BASE/api/…</code> instead of the long URL.</td></tr>
-    <tr><td><code>TOKEN=$(curl … login …)</code></td><td>Calls <code>POST /api/auth/login</code> with chris.brown's username and password as JSON. The app answers with JSON containing <code>"token":"eyJ…"</code>. The <code>sed</code> at the end of the pipe (<code>|</code>) pulls just the token text out of that JSON, and <code>TOKEN=$(…)</code> stores it in a variable.</td></tr>
-    <tr><td><code>curl</code> flags</td><td><code>-s</code> = silent (no progress meter) · <code>-X POST</code> = make it a POST · <code>-H …</code> = add an HTTP header · <code>-d …</code> = the request body.</td></tr>
-    <tr><td><code>SAVINGS_ID=$(curl … accounts …)</code></td><td>Calls <code>GET /api/accounts</code> with the header <code>Authorization: Bearer $TOKEN</code> — that's how the app knows it's chris.brown asking — then <code>sed</code> picks out the id of his <b>savings</b> account. Attacks that move money need a destination account id; this is it.</td></tr>
-    <tr><td><code>echo …</code></td><td>Prints confirmation so you can see it worked.</td></tr>
-  </table>
-
-  <p><b>Success looks like:</b> <code>token loaded, savings account 8f3c…(a long UUID)</code>.
-  If instead you see an empty id, the login failed — check you pasted the whole block, then wait 60 seconds
-  and try again (login is capped at 5 attempts per minute).</p>
+  <h3>What that one command does</h3>
+  <ul class="tight">
+    <li>Logs in as chris.brown with his password and stores the returned <b>session token</b> (a JWT — a 24-hour "key card"; from here on you show the card, not the password) as <code>$TOKEN</code>.</li>
+    <li>Looks up his <b>savings account id</b> and stores it as <code>$SAVINGS_ID</code> — money-moving attacks need a destination account.</li>
+    <li>Sets <code>$BASE</code> (the app URL) so the commands can just write <code>$BASE/api/…</code>.</li>
+    <li>Saves all three to <code>/tmp/pgc-attacker.env</code> — a <b>second Terminal window</b> can skip the login entirely with <code>source /tmp/pgc-attacker.env</code>.</li>
+  </ul>
 
   <div class="box warn"><b>Two things beginners trip on:</b><br>
-  ① These variables live <b>only inside this Terminal window</b>. Open a new window, or close this one, and
-  you must paste the block again.<br>
-  ② The token expires after 24 hours. Same fix: re-paste the block.</div>
+  ① The <code>source</code> matters — running <code>bash scripts/load-attacker.sh</code> prints a reminder
+  and exits, because variables set in a sub-shell die with it. Open a <b>new Terminal window?</b> Run
+  <code>source /tmp/pgc-attacker.env</code> there (no re-login, respects the 5-per-minute login cap).<br>
+  ② The token expires after 24 hours — <code>source scripts/load-attacker.sh</code> again the next day.</div>
+
+  <p class="meta" style="color:var(--gray); font-size:12.5px">If the script ever misbehaves, the manual
+  fallback is: <code>TOKEN=$(&lt;curl login with username/password JSON&gt;)</code> then
+  <code>SAVINGS_ID=$(&lt;curl /api/accounts with the Bearer header, extract the savings id&gt;)</code> —
+  the script is exactly those two curls plus printing; read it with <code>cat scripts/load-attacker.sh</code>.
+  Note there is no permanent token by design: the app mints a fresh 24h key card per login, and a
+  never-expiring credential would be a real vulnerability in the very app we're presenting.</p>
 </div>
 
 <div class="step">
@@ -272,7 +266,7 @@ echo "token loaded, savings account $SAVINGS_ID"</pre>
 <div class="step">
   <h4>Step 6 · Demo morning (2 minutes)</h4>
   <div class="checkline"><div class="boxit"></div><div>Dashboard: re-walk Step 3 subsections 3.2–3.6 — the one-line staging checklist holds (4 PGC custom rules Off · 3 rate limits Off · schema at Log · SDD On · leaked-credential detection On · Leaked Credentials Rule On).</div></div>
-  <div class="checkline"><div class="boxit"></div><div>Paste the Step 4 bootstrap block into a fresh Terminal window.</div></div>
+  <div class="checkline"><div class="boxit"></div><div>Terminal: <code>cd</code> into the repo, then <code>source scripts/load-attacker.sh</code>.</div></div>
   <div class="checkline"><div class="boxit"></div><div>Browser tabs open: zone → <b>Security → Events</b>; <b>Security → API Shield</b> (Discovery / Web Assets); <b>Security → WAF</b> (your toggling station for the meeting); the app logged in as <b>admin</b>; a private window logged in as <b>chris.brown</b> (the attacker's UI session — the homepage upload button uses it).</div></div>
   <div class="checkline"><div class="boxit"></div><div>If the room goes sideways: the staging state is just the Step 3 one-line checklist — you can always get back in under a minute.</div></div>
 </div>
@@ -283,8 +277,11 @@ echo "token loaded, savings account $SAVINGS_ID"</pre>
 <h2>Tab 2 — Attack Use Cases</h2>
 <p>Five use cases from the Metrobank POC plan, executed against the banking demo app. Each use case lists
 the Cloudflare feature it proves, the two attacks, and the exact dashboard toggle you flip — live, with
-the customer — to make the same attack fail. Commands assume the Tab 1 bootstrap
-(<code>$TOKEN</code>, <code>$SAVINGS_ID</code>).</p>
+the customer — to make the same attack fail.</p>
+<div class="box"><b>Before any attack command:</b> from the repo folder, run
+<code>source scripts/load-attacker.sh</code> — that one line gives this Terminal the attacker session
+(<code>$BASE</code>, <code>$TOKEN</code>, <code>$SAVINGS_ID</code>). New window?
+<code>source /tmp/pgc-attacker.env</code> restores it without re-logging in.</div>
 
 <div class="box">
 <b>Why are we attacking this app and not the customer's environment?</b> Say this out loud early — it
@@ -322,6 +319,7 @@ then return every toggle to Off and schema validation to Log before you leave th
       <li><span class="pill before">BEFORE</span> 201 — file lands in Documents (clean it up from the Documents page afterwards).</li>
       <li><span class="pill after">AFTER</span> 403 — <b>"Blocked at the Cloudflare edge"</b> right in the app's UI.</li>
     </ul>
+    <div class="kv"><b>Blocked by</b><span>custom rule <code>PGC demo: block malicious uploads (content scanning)</code> — fires on <code>cf.waf.content_scan.has_malicious_obj</code>. Confirm in <b>Security → Events</b>: the event names this rule.</span></div>
   </div>
 
   <div class="attack">
@@ -335,6 +333,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
       <li><span class="pill before">BEFORE</span> 201 + upload id (cleanup: <code>curl -s -X DELETE -H "Authorization: Bearer $TOKEN" $BASE/api/uploads/&lt;id&gt;</code>).</li>
       <li><span class="pill after">AFTER</span> 403 from content scanning, before R2 is touched.</li>
     </ul>
+    <div class="kv"><b>Blocked by</b><span>same rule as 1.1: <code>PGC demo: block malicious uploads (content scanning)</code>. In Events you can filter by rule name to see every attempt.</span></div>
   </div>
 
   <div class="arm"><b class="tag">Arm in the dashboard</b>
@@ -369,6 +368,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
       <li><span class="pill before">BEFORE</span> 200 — full user table: password hashes, salts, SSNs, auth config. No credentials needed.</li>
       <li><span class="pill after">AFTER</span> 403 — the leak path is dead.</li>
     </ul>
+    <div class="kv"><b>Blocked by</b><span>custom rule <code>PGC demo: block unauthenticated /api/internal/debug</code>. <i>Note: after UC-5 arms the fallthrough rule, a repeat of this attack may be attributed to the fallthrough rule instead (first match wins — either event proves the point).</i></span></div>
   </div>
 
   <div class="attack">
@@ -378,6 +378,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
       <li><span class="pill before">BEFORE</span> 200 — an undocumented query param flips the endpoint to full-record mode (session payload, SSN, raw account rows).</li>
       <li><span class="pill after">AFTER</span> 403 — the contract declares no query string at all on this path.</li>
     </ul>
+    <div class="kv"><b>Blocked by</b><span>custom rule <code>PGC demo: block any query string on /api/profile</code>.</span></div>
   </div>
 
   <div class="arm"><b class="tag">Arm in the dashboard</b>
@@ -418,6 +419,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
       <li><span class="pill before">BEFORE</span> (rule toggled Off): request flows to the app → 401 "invalid credentials" — the stolen pair sails straight through.</li>
       <li><span class="pill after">AFTER</span> (rule On): <b>403 at the edge</b> — the request never reaches the app. <b>Security → Events</b> shows the block, rule <code>Leaked Credentials Rule</code>.</li>
     </ul>
+    <div class="kv"><b>Blocked by</b><span>custom rule <code>Leaked Credentials Rule</code> (Block on <code>cf.waf.credential_check.username_and_password_leaked</code>), fed by the <b>Leaked credential detection</b> toggle under <b>Security → Settings → Detection tools</b>. The event in Security Events names the rule.</span></div>
   </div>
 
   <div class="attack">
@@ -425,6 +427,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
     <ul class="tight">
       <li>Browser → <code>$BASE/login</code> → enter the same test pair: with the rule Off it fails as a normal bad login; with the rule On the edge blocks it outright. Emphasize: the protection fires only when the <i>submitted pair is known-breached</i> — legitimate users see zero change.</li>
     </ul>
+    <div class="kv"><b>Blocked by</b><span>same rule as 3.1: <code>Leaked Credentials Rule</code> — the UI login posts to the same endpoint, so the same policy catches it.</span></div>
   </div>
 
   <div class="arm"><b class="tag">Arm in the dashboard</b>
@@ -460,6 +463,7 @@ done</pre>
       <li><span class="pill before">BEFORE</span> 20 × 201 — every $0.01 transfer completes (show a few landing in chris.brown's transaction history).</li>
       <li><span class="pill after">AFTER</span> ten 201s, then <b>429s</b> — this is a pure rate-limit block: with only the rate limit armed, nothing else stands in the way. Contrast: the app's real transfer endpoint enforces the same control in code; here it's zero code at the edge.</li>
     </ul>
+    <div class="kv"><b>Blocked by</b><span>rate limiting rule <code>PGC demo: express-transfer burst rate limit</code> (10 requests/60s → 429, 120s timeout). <i>Note: after UC-5 arms the fallthrough rule, this path also 403s outright — the 429 pure rate-limit story works while fallthrough is still Off.</i></span></div>
   </div>
 
   <div class="attack">
@@ -475,6 +479,7 @@ done</pre>
       <li><span class="pill before">BEFORE</span> every customer's balance, harvested in seconds by one ordinary user.</li>
       <li><span class="pill after">AFTER</span> 5 reads per 30 seconds, then 429 with a 60-second timeout — enumeration slowed to uselessness. Be precise here: rate limiting throttles the harvest; UC-5's schema contract removes the path entirely (it's an undocumented op). Re-run <code>./test-api.sh</code> while armed: 39/39 green — legitimate users untouched.</li>
     </ul>
+    <div class="kv"><b>Blocked by</b><span>rate limiting rule <code>PGC demo: BOLA enumeration rate limit</code> (5 requests/30s → 429, 60s timeout). After UC-5 is armed, custom rule <code>PGC demo: fallthrough block</code> 403s the path entirely.</span></div>
   </div>
 
   <div class="arm"><b class="tag">Arm in the dashboard</b>
@@ -510,6 +515,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/accounts?userId=f49a7d79
       <li><b>Security → API Shield → Discovery</b>: <code>GET /api/v1/accounts</code> listed as an operation absent from the uploaded schema — the shadow API, found without any agent or config.</li>
       <li><span class="pill after">AFTER</span> 403 — fallthrough rule blocks every operation outside the contract.</li>
     </ul>
+    <div class="kv"><b>Blocked by</b><span>custom rule <code>PGC demo: fallthrough block (ops outside the OpenAPI schema)</code> on <code>cf.api_gateway.fallthrough_detected</code> — this is what "the contract is enforced" looks like as a rule. In Events the event names this rule; <b>API Shield → Discovery</b> is where the shadow op was first spotted.</span></div>
   </div>
 
   <div class="attack">
@@ -520,6 +526,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/accounts?userId=f49a7d79
       <li><span class="pill before">BEFORE</span> 500 with a JavaScript stack trace and internal file paths — recon gold.</li>
       <li><span class="pill after">AFTER</span> 403/400 at the edge — schema strict typing + fallthrough: garbage never reaches the app, so there's no error surface to mine.</li>
     </ul>
+    <div class="kv"><b>Blocked by</b><span><b>schema validation</b> (default action <b>Block</b> on the <code>openapi-schema</code> contract — <b>Security → API Shield → Schema Validation</b>) rejects the malformed body; the fallthrough custom rule is the alternate catcher since <code>/api/debug/parse</code> is undocumented. The Security Events row names whichever matched.</span></div>
   </div>
 
   <div class="arm"><b class="tag">Arm in the dashboard</b>
