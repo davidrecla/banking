@@ -27,8 +27,11 @@ case "$(uname -s)" in
 esac
 
 BASE="${BASE_URL:-https://banking.puregroundscoffee.com}"
-USERNAME="${DEMO_USERNAME:-chris.brown}"
-PASSWORD="${DEMO_PASSWORD:-cbrown123}"
+# Fixed demo identity on purpose: no env overrides (a stray DEMO_USERNAME
+# export on the demo laptop once made this script log in as the wrong user
+# on stage). The other scripts still honor DEMO_USERNAME/DEMO_PASSWORD.
+USERNAME="chris.brown"
+PASSWORD="cbrown123"
 # Build the JSON body with printf (single-quoted literal — no shell escaping
 # pitfalls regardless of bash/zsh/Git Bash).
 BODY=$(printf '{"username":"%s","password":"%s"}' "$USERNAME" "$PASSWORD")
@@ -42,7 +45,7 @@ if [ -z "$TOKEN" ]; then
   echo "  sent body: $BODY  →  $BASE/api/auth/login"
   case "$LOGIN" in
     *"Too many login attempts"*) echo "  → 5 logins/min per user. Wait 60 seconds, then run me again — or just use: source /tmp/pgc-attacker.env" ;;
-    *"Invalid username or password"*) echo "  → the app rejected the credentials above. If the body looks right, check overrides: echo \"\$DEMO_USERNAME \$DEMO_PASSWORD\"" ;;
+    *"Invalid username or password"*) echo "  → the app rejected the demo credentials (script is hardcoded to chris.brown/cbrown123 — if that body above shows anything else, your copy of the script is stale: git pull)" ;;
   esac
   return 1 2>/dev/null || exit 1
 fi
