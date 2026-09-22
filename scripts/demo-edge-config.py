@@ -59,13 +59,13 @@ def zone_id():
 def sync_schema(z):
     source = open(SCHEMA_FILE, encoding="utf-8").read()
     existing = api("GET", f"/zones/{z}/schema_validation/schemas")
-    match = [s for s in existing if s["name"] == "pgc-bank-openapi"]
+    match = [s for s in existing if s["name"] in ("openapi-schema", "pgc-bank-openapi")]
     if match:
         print(f"  schema '{match[0]['name']}' already uploaded ({match[0]['schema_id'][:8]}...) — leaving as-is")
     else:
         r = api("POST", f"/zones/{z}/schema_validation/schemas", {
             "kind": "openapi_v3",
-            "name": "pgc-bank-openapi",
+            "name": "openapi-schema",
             "source": source,
             "validation_enabled": True,
         })
@@ -109,17 +109,29 @@ def validation_action(z):
         "validation_default_mitigation_action", "none")
 
 
-# Exposed Credentials Check managed ruleset (found at account level), executed
-# from the zone's managed phase. Default rewrite action logs + sets the
-# Exposed-Credential-Check header on hits; its own rules already target
-# JSON logins with {username, password} — exactly our POST /api/auth/login.
-EXPOSED_CREDS_RULESET_ID = "c2e184081120413c86c3ab7e14069605"
+# Leaked Credentials detection (the successor to the deprecated Exposed
+# Credentials Check managed ruleset, removed from this zone 2026-09-22).
+# The zone-level detection (Security -> Settings -> Detection tools) stays
+# ON permanently like SDD — it only populates fields, never blocks. The
+# before/after flip comes from the custom "log" rule in CUSTOM_RULES below,
+# which records detected logins to Security Events only when armed.
+def leaked_creds_status(z):
+    try:
+        r = api("GET", f"/zones/{z}/leaked-credential-checks")
+        state = "on" if r.get("enabled") else "off"
+    except Exception as e:
+        print(f"  [??] leaked credential detection unreadable: {e}")
+        return
+    print(f"  [{state}] Leaked credential detection (zone detection, detect-only — leave on)")
+    if not r.get("enabled"):
+        print("       ^ expected ON: Security -> Settings -> Detection tools -> Leaked credential detection")
+
 
 # Cloudflare Sensitive Data Detection managed ruleset (response-body scan).
 # Deployed via the dashboard (Security -> Data -> Sensitive Data Detection);
 # it is NOT prefixed "PGC demo:" and this tool never modifies it — it is a
-# log/detect-only scan, safe to leave on in both demo states. arm/disarm
-# merely detect and report it.
+# log/detect-only scan, safe to leave on in both demo states. status
+# merely detects and reports it.
 SDD_RULESET_ID = "e22d83c647c64a3eae91b71b499d988e"
 
 
@@ -135,44 +147,6 @@ def sdd_status(z):
         print("  [??] Sensitive Data Detection NOT deployed — enable via dashboard: Security -> Data -> Sensitive Data Detection -> Managed ruleset")
     for r in found:
         print(f"  [{'on' if r.get('enabled') else 'off'}] Sensitive Data Detection ruleset (dashboard-managed, detect-only — leave on)")
-
-
-def apply_managed_rule(z, enabled):
-    """Create (once) and arm/disarm the exposed-credential-check execute rule
-    in the managed phase. Toggles with the rest of the demo: off in the
-    "before" state so UC-03 shows nothing flagged, on in the "after" state so
-    pwned-pair logins surface in Security Events. Preserves every other
-    managed-phase rule (incl. the dashboard-deployed SDD rule)."""
-    phase = "http_request_firewall_managed"
-    existing = get_ruleset(z, phase)
-    if not existing:
-        raise RuntimeError("no managed-phase entrypoint ruleset found — expected OWASP + Managed rulesets")
-    current = existing["rules"]
-    keep = [r for r in current
-            if not r.get("description", "").startswith(RULE_PREFIX)
-            and not _rule_executes(r, EXPOSED_CREDS_RULESET_ID)]
-    ours = {
-        "description": f"{RULE_PREFIX} exposed credential check on login",
-        "expression": f'(http.host eq "{HOST}")',
-        "action": "execute",
-        "action_parameters": {"id": EXPOSED_CREDS_RULESET_ID},
-        "enabled": enabled,
-    }
-    put_ruleset(z, phase, keep + [ours])
-    state = "armed" if enabled else "disarmed"
-    print(f"  {state}: {ours['description']}")
-
-
-def managed_rule_status(z):
-    existing = get_ruleset(z, "http_request_firewall_managed")
-    rules = existing["rules"] if existing else []
-    ours = [r for r in rules if r.get("description", "").startswith(RULE_PREFIX)
-            or _rule_executes(r, EXPOSED_CREDS_RULESET_ID)]
-    for r in ours:
-        print(f"  [{'on' if r.get('enabled') else 'off'}] {r['description']}")
-    if not ours:
-        print("  (no demo rules in http_request_firewall_managed)")
-    sdd_status(z)
 
 
 # --- Custom + rate-limit rules ----------------------------------------------
@@ -296,14 +270,14 @@ def main():
         print("arming protections (demo AFTER state):")
         apply_rules(z, "http_request_firewall_custom", CUSTOM_RULES, True)
         apply_rules(z, "http_ratelimit", RATE_LIMIT_RULES, True)
-        apply_managed_rule(z, True)
+        leaked_creds_status(z)
         sdd_status(z)
         set_validation_action(z, "block")
     elif cmd == "disarm":
         print("disarming protections (demo BEFORE / staging state):")
         apply_rules(z, "http_request_firewall_custom", CUSTOM_RULES, False)
         apply_rules(z, "http_ratelimit", RATE_LIMIT_RULES, False)
-        apply_managed_rule(z, False)
+        leaked_creds_status(z)
         sdd_status(z)
         set_validation_action(z, "log")
     elif cmd == "status":
@@ -315,7 +289,16 @@ def main():
                 print(f"  [{'on' if r.get('enabled') else 'off'}] {r['description']}")
             if not ours:
                 print(f"  (no demo rules in {phase})")
-        managed_rule_status(z)
+        leaked_creds_status(z)
+        # The operator maintains an unscoped "Leaked Credentials Rule" custom
+        # rule (added 2026-09-22) that blocks leaked creds zone-wide in ALL
+        # demo states. It is not PGC-prefixed; report it, never toggle it.
+        rs = get_ruleset(z, "http_request_firewall_custom")
+        for r in (rs["rules"] if rs else []):
+            if "credential_check" in r.get("expression", "") and \
+               not r.get("description", "").startswith(RULE_PREFIX):
+                print(f"  [{'on' if r.get('enabled', True) else 'off'}] {r['description']} (user-owned leaked-credentials mitigation — always on)")
+        sdd_status(z)
     else:
         sys.exit(f"unknown command: {cmd}")
 

@@ -121,7 +121,7 @@ git pull</pre>
   <ol class="tight">
     <li>Sidebar: <b>Security → WAF</b>.</li>
     <li>Click the <b>Custom rules</b> tab.</li>
-    <li>You should see four rules named <code>PGC demo: …</code>. For each, the <b>Enabled</b> toggle must be <b>Off</b> (gray). If one shows On (blue), click the toggle to turn it Off.</li>
+    <li>You should see four rules named <code>PGC demo: …</code>. For each, the <b>Enabled</b> toggle must be <b>Off</b> (gray). If one shows On (blue), click the toggle to turn it Off. (You'll also see <code>Leaked Credentials Rule</code> here — it belongs to UC-3 / Step 3.4, and stays On.)</li>
   </ol>
   <table>
     <tr><th>Rule name (exact)</th><th>Expression</th><th>Action</th></tr>
@@ -149,21 +149,17 @@ git pull</pre>
   "When incoming requests match…" → set the rate and action from the table → <b>Characteristics:</b> leave
   the default (<i>IP with NAT support</i> = <code>ip.src + cf.colo.id</code>) → Deploy → toggle <b>Off</b>.</p>
 
-  <h3>3.4 — The exposed credential check deployment</h3>
+  <h3>3.4 — Leaked credential detection (successor to the old Exposed Credentials Check)</h3>
   <ol class="tight">
-    <li>Sidebar: <b>Security → WAF</b> → <b>Managed rules</b> tab.</li>
-    <li>In the list of deployed rulesets, find the entry named <code>PGC demo: exposed credential check on login</code>.</li>
-    <li>Its status must be <b>Off</b> for staging. If it's On, disable it now.</li>
+    <li>Sidebar: <b>Security → Settings</b> → filter <b>Detection tools</b> → <b>Leaked credential detection</b> must be <b>On</b>. Leave it On in every state — it only annotates requests with <code>cf.waf.credential_check.*</code> fields, never blocks.</li>
+    <li>Sidebar: <b>Security → WAF</b> → <b>Custom rules</b> tab → find <code>Leaked Credentials Rule</code> (expression <code>(cf.waf.credential_check.username_and_password_leaked)</code>, action <b>Block</b>, zone-wide). This is the rule UC-3 toggles live; staging state is <b>On</b> — it only fires when a request literally contains a breached username+password pair, so it silently protects the zone between rehearsals without touching any demo traffic.</li>
   </ol>
-  <p><b>If it's missing:</b> it's a host-scoped deployment of the <i>Cloudflare Exposed Credentials Check</i>
-  ruleset — recreate it from this tab with scope <code>hostname equals banking.puregroundscoffee.com</code>
-  and the default (log) action. If the scope UI isn't obvious, don't improvise — confirm the exact path
-  during your Step 5 rehearsal when you're not on stage.</p>
+  <p class="meta" style="color:var(--gray); font-size:12.5px">Note: Cloudflare retired the old <i>Exposed Credentials Check</i> managed ruleset; this detection + custom rule is its replacement and is deliberately <i>not</i> prefixed <code>PGC demo:</code>.</p>
 
   <h3>3.5 — API Shield: schema validation + session identifier</h3>
   <ol class="tight">
     <li>Sidebar: <b>Security → API Shield</b>.</li>
-    <li>Open <b>Schema Validation</b>: the schema <code>pgc-bank-openapi</code> must be listed as uploaded and enabled.</li>
+    <li>Open <b>Schema Validation</b>: the schema <code>openapi-schema</code> must be listed as uploaded and enabled (that's <code>openapi-schema.yaml</code> from the repo, uploaded via API Shield).</li>
     <li>Find the <b>default action</b> setting — it must be <b>Log</b> (staging), not Block. You'll flip this live in UC-5.</li>
     <li>Open API Shield <b>Settings</b>: <b>Session identifiers</b> must include the JWT <code>sub</code> claim.</li>
   </ol>
@@ -175,8 +171,9 @@ git pull</pre>
     <li><b>Do not turn it off.</b> It scans responses and logs matches but never blocks — that visibility is UC-2's evidence, and it needs to be collecting during every BEFORE run.</li>
   </ol>
 
-  <div class="box good"><b>Staging checklist, one line:</b> 4 custom rules Off · 3 rate limits Off ·
-  exposed-credential deployment Off · schema validation at Log · SDD On. That's the whole state.</div>
+  <div class="box good"><b>Staging checklist, one line:</b> 4 custom <code>PGC demo:</code> rules Off ·
+  3 rate limits Off · schema validation at Log · SDD On · leaked-credential detection On ·
+  Leaked Credentials Rule On. That's the whole state.</div>
 </div>
 
 <div class="step">
@@ -274,7 +271,7 @@ echo "token loaded, savings account $SAVINGS_ID"</pre>
 
 <div class="step">
   <h4>Step 6 · Demo morning (2 minutes)</h4>
-  <div class="checkline"><div class="boxit"></div><div>Dashboard: re-walk Step 3 subsections 3.2–3.6 — the one-line staging checklist holds (4 custom rules Off · 3 rate limits Off · exposed-credential deployment Off · schema at Log · SDD On).</div></div>
+  <div class="checkline"><div class="boxit"></div><div>Dashboard: re-walk Step 3 subsections 3.2–3.6 — the one-line staging checklist holds (4 PGC custom rules Off · 3 rate limits Off · schema at Log · SDD On · leaked-credential detection On · Leaked Credentials Rule On).</div></div>
   <div class="checkline"><div class="boxit"></div><div>Paste the Step 4 bootstrap block into a fresh Terminal window.</div></div>
   <div class="checkline"><div class="boxit"></div><div>Browser tabs open: zone → <b>Security → Events</b>; <b>Security → API Shield</b> (Discovery / Web Assets); <b>Security → WAF</b> (your toggling station for the meeting); the app logged in as <b>admin</b>; a private window logged in as <b>chris.brown</b> (the attacker's UI session — the homepage upload button uses it).</div></div>
   <div class="checkline"><div class="boxit"></div><div>If the room goes sideways: the staging state is just the Step 3 one-line checklist — you can always get back in under a minute.</div></div>
@@ -403,45 +400,43 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
 
 <!-- ============ UC-3 ============ -->
 <div class="uc">
-  <h4>UC-3 · Exposed Credentials Check</h4>
-  <div class="meta">Plan criterion: <i>"Submit a test login using a known-leaked credential pair; the request is flagged and logged in Security Events."</i></div>
+  <h4>UC-3 · Leaked Credentials Detection <span class="pill note">renamed feature</span></h4>
+  <div class="meta">Plan criterion: <i>"Submit a test login using a known-leaked credential pair; the request is flagged/challenged and logged in Security Events."</i> (The plan says "Exposed Credentials Rules" — Cloudflare has replaced that managed ruleset with <b>leaked credential detection</b> + a mitigation rule; that is what this UC demonstrates.)</div>
   <div class="kv">
-    <b>Feature showcased</b><span><b>Cloudflare Exposed Credentials Check</b> managed ruleset on <code>POST /api/auth/login</code>. On a hit it logs a Security Event and sets the <code>Exposed-Credential-Check</code> header; the default action never blocks, so it can run in detect mode in production.</span>
-    <b>Environment attacked</b><span>The app's JSON login endpoint — exactly the <code>{username, password}</code> shape the ruleset scans.</span>
+    <b>Feature showcased</b><span><b>Leaked credential detection</b> — Cloudflare hashes submitted credentials and compares them against its breach database (never stores plaintext), populating <code>cf.waf.credential_check.username_and_password_leaked</code> on matching requests. Mitigation here is the custom rule <code>Leaked Credentials Rule</code> (Block when that field is true) — better than the plan's "flag": the attack never reaches the app.</span>
+    <b>Environment attacked</b><span>The app's JSON login endpoint — exactly the <code>{username, password}</code> shape the detection scans (JSON logins are covered by default; no custom detection location needed).</span>
   </div>
 
   <div class="attack">
-    <h5>Attack 3.1 · Login with a known-pwned credential pair (credential stuffing / reuse)</h5>
+    <h5>Attack 3.1 · Login with breached credentials (credential stuffing / password reuse)</h5>
     <pre>curl -s -o /dev/null -w "leaked-cred login attempt -> %{http_code}\n" \
   -X POST -H 'Content-Type: application/json' \
-  -d '{"username":"known.pwned.username","password":"known-pwned-password"}' \
+  -d '{"username":"CF_EXPOSED_USERNAME","password":"CF_EXPOSED_PASSWORD"}' \
   $BASE/api/auth/login</pre>
     <ul class="tight">
-      <li>App still answers 401 (no such user) — the point is not access, it's that the edge <b>recognized the pair</b> from public breach corpuses.</li>
-      <li><span class="pill before">BEFORE</span> deployment off — nothing recorded.</li>
-      <li><span class="pill after">AFTER</span> <b>Security → Events</b>, filter Service <i>Exposed Credential Check</i>: the attempt is there.</li>
+      <li><code>CF_EXPOSED_USERNAME</code> / <code>CF_EXPOSED_PASSWORD</code> are <b>Cloudflare's official test credentials</b> — guaranteed breach-corpus hits, so this demo is deterministic. No hunting for real pwned pairs (a genuinely pwned pair, e.g. from haveibeenpwned, works just as well if you prefer).</li>
+      <li><span class="pill before">BEFORE</span> (rule toggled Off): request flows to the app → 401 "invalid credentials" — the stolen pair sails straight through.</li>
+      <li><span class="pill after">AFTER</span> (rule On): <b>403 at the edge</b> — the request never reaches the app. <b>Security → Events</b> shows the block, rule <code>Leaked Credentials Rule</code>.</li>
     </ul>
   </div>
 
   <div class="attack">
     <h5>Attack 3.2 · Same attack through the login UI (visual beat)</h5>
     <ul class="tight">
-      <li>Browser → <code>$BASE/login</code> → enter any genuinely pwned pair → "invalid credentials" for the user as normal — while Security Events flags the pair at the edge. Emphasize: protection is invisible to legitimate users.</li>
+      <li>Browser → <code>$BASE/login</code> → enter the same test pair: with the rule Off it fails as a normal bad login; with the rule On the edge blocks it outright. Emphasize: the protection fires only when the <i>submitted pair is known-breached</i> — legitimate users see zero change.</li>
     </ul>
   </div>
 
   <div class="arm"><b class="tag">Arm in the dashboard</b>
   <ol class="tight">
-    <li>Sidebar: <b>Security → WAF</b> → <b>Managed rules</b> tab.</li>
-    <li>Find the deployment <code>PGC demo: exposed credential check on login</code> and set it <b>On</b>.</li>
-    <li>Note for the room: its action is log-only by default — detection first, raise to block later.</li>
-  </ol>
-  (Confirm the exact placement during the Step 5 rehearsal — managed-ruleset deployments list with the other managed entries.)</div>
+    <li>Sidebar: <b>Security → WAF</b> → <b>Custom rules</b> tab.</li>
+    <li>Find <code>Leaked Credentials Rule</code> — toggle <b>Off</b> for the BEFORE attack, then back <b>On</b> for the AFTER attack. (It's zone-wide on purpose: say out loud that one rule now protects every property on the zone.)</li>
+    <li>Show <b>Security → Settings → Detection tools → Leaked credential detection</b> = On: that's the one switch that turns the whole capability on; the rule just decides what happens on a hit (Block — could also be Challenge or log-only).</li>
+  </ol></div>
 
-  <div class="box warn"><b>Honest caveat:</b> the check fires only on pairs actually present in the breach
-  corpus. The seeded demo accounts are deliberately <i>not</i> leaked — use any real pwned pair (e.g. from
-  haveibeenpwned) to force a hit. Position as detection + visibility that can be raised to block/managed
-  challenge later.</div>
+  <div class="box warn"><b>Witness the detection, not just the block:</b> rule-off runs still get <i>detected</i>
+  (fields populate) — they're just allowed through. As a bonus beat, Security Analytics flags those leaked-credential
+  attempts even when no rule blocks them, which is exactly the detect-first-then-mitigate rollout story for production.</div>
 </div>
 
 <!-- ============ UC-4 ============ -->
