@@ -76,9 +76,17 @@ expect "POST /api/auth/login empty body -> 400" "400" "$("${CURL[@]}" -s -w '%{h
 
 expect "POST /api/auth/login wrong password -> 401" "401" "$("${CURL[@]}" -s -w '%{http_code} ' -X POST -H 'Content-Type: application/json' -d "{\"username\":\"$USERNAME\",\"password\":\"wrong-password\"}" -o /tmp/tapi.$$ "$BASE_URL/api/auth/login"; cat /tmp/tapi.$$)"; rm -f /tmp/tapi.$$
 
-LOGIN=$("${CURL[@]}" -X POST -H 'Content-Type: application/json' -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" "$BASE_URL/api/auth/login")
-TOKEN=$(first_json_field "$LOGIN" token)
-if [ -n "$TOKEN" ]; then ok "POST /api/auth/login good credentials -> 200 + token"; else echo "FATAL: login failed, aborting: $LOGIN"; exit 1; fi
+# Reuse the attacker's already-loaded session (scripts/load-attacker.sh or
+# /tmp/pgc-attacker.env) when present; only do a fresh login as a fallback,
+# to stay well under the 5-logins-per-minute cap.
+if [ -z "$TOKEN" ] && [ -f /tmp/pgc-attacker.env ]; then . /tmp/pgc-attacker.env 2>/dev/null; fi
+if [ -z "$TOKEN" ]; then
+  LOGIN=$("${CURL[@]}" -X POST -H 'Content-Type: application/json' -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" "$BASE_URL/api/auth/login")
+  TOKEN=$(first_json_field "$LOGIN" token)
+  if [ -n "$TOKEN" ]; then ok "POST /api/auth/login good credentials -> 200 + token"; else echo "FATAL: login failed, aborting: $LOGIN"; exit 1; fi
+else
+  ok "session token reused from the loaded attacker session (no fresh login)"
+fi
 
 REFRESH=$(http POST /api/auth/refresh "{\"token\":\"$TOKEN\"}")
 expect "POST /api/auth/refresh -> 200 and new token" "200" "$REFRESH"

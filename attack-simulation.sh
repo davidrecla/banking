@@ -56,11 +56,18 @@ echo "=== attack-simulation.sh — mode: $MODE ==="
 echo "Target: $BASE_URL (attacker identity: $USERNAME)"
 echo
 
-# Attacker session: an ordinary, legitimate customer login. --------
-LOGIN=$("${CURL[@]}" -X POST -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" "$BASE_URL/api/auth/login")
-TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' <<<"$LOGIN" | head -1)
-[ -z "$TOKEN" ] && { echo "FATAL: attacker login failed: $LOGIN"; exit 1; }
+# Attacker session: reuse the terminal's existing token if load-attacker.sh
+# (or /tmp/pgc-attacker.env) already provided one — saves a login against the
+# 5/min cap. Otherwise an ordinary, legitimate customer login. --------
+[ -z "$TOKEN" ] && [ -f /tmp/pgc-attacker.env ] && { . /tmp/pgc-attacker.env; echo "reusing cached attacker session (/tmp/pgc-attacker.env)"; }
+if [ -z "$TOKEN" ]; then
+  LOGIN=$("${CURL[@]}" -X POST -H 'Content-Type: application/json' \
+    -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" "$BASE_URL/api/auth/login")
+  TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' <<<"$LOGIN" | head -1)
+  [ -z "$TOKEN" ] && { echo "FATAL: attacker login failed: $LOGIN"; exit 1; }
+else
+  echo "reusing existing \$TOKEN (no fresh login)"
+fi
 CURL_AUTH=(-H "Authorization: Bearer $TOKEN")
 ACCOUNTS=$("${CURL[@]}" -s "${CURL_AUTH[@]}" "$BASE_URL/api/accounts")
 SAVINGS_ID=$(sed -n 's/.*{"id":"\([^"]*\)"[^{]*"account_type":"savings".*/\1/p' <<<"$ACCOUNTS" | head -1)

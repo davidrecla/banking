@@ -212,7 +212,11 @@ git pull</pre>
 <div class="step">
   <h4>Step 5 · Rehearse end-to-end (the day before, ~20 minutes)</h4>
   <p>Two scripts do the rehearsal. You don't need to read or edit them — you run them and read their
-  output. Both are just sequences of the same kind of <code>curl</code> calls you made by hand in Step 4.</p>
+  output. Both are just sequences of the same kind of <code>curl</code> calls you made by hand in Step 4.
+  <b>Both reuse the session from Step 4</b> (<code>source scripts/load-attacker.sh</code>) instead of
+  logging in again — run Step 4 first and you'll see <code>session token reused</code> in their output;
+  if nothing is loaded they log in on their own as a fallback. (The login endpoint caps at 5 attempts/minute
+  per user — reuse keeps you far under it.)</p>
 
   <h3>Script 1 — <code>./test-api.sh</code> (the "legitimate customer" check)</h3>
   <pre>./test-api.sh</pre>
