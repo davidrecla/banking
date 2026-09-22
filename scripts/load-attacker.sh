@@ -29,16 +29,20 @@ esac
 BASE="${BASE_URL:-https://banking.puregroundscoffee.com}"
 USERNAME="${DEMO_USERNAME:-chris.brown}"
 PASSWORD="${DEMO_PASSWORD:-cbrown123}"
+# Build the JSON body with printf (single-quoted literal — no shell escaping
+# pitfalls regardless of bash/zsh/Git Bash).
+BODY=$(printf '{"username":"%s","password":"%s"}' "$USERNAME" "$PASSWORD")
 
 RESP=$("${CURL[@]}" -w $'\n%{http_code}' -X POST -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" "$BASE/api/auth/login")
+  -d "$BODY" "$BASE/api/auth/login")
 CODE=${RESP##*$'\n'}; LOGIN=${RESP%$'\n'*}
 TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' <<<"$LOGIN" | head -1)
 if [ -z "$TOKEN" ]; then
   echo "ATTACKER LOGIN FAILED — HTTP $CODE: $LOGIN"
+  echo "  sent body: $BODY  →  $BASE/api/auth/login"
   case "$LOGIN" in
     *"Too many login attempts"*) echo "  → 5 logins/min per user. Wait 60 seconds, then run me again — or just use: source /tmp/pgc-attacker.env" ;;
-    *"Invalid username or password"*) echo "  → the app rejected the hardcoded credentials. Verify by hand:" ; echo "    curl -i -X POST -H 'Content-Type: application/json' -d '{\"username\":\"chris.brown\",\"password\":\"cbrown123\"}' $BASE/api/auth/login" ;;
+    *"Invalid username or password"*) echo "  → the app rejected the credentials above. If the body looks right, check overrides: echo \"\$DEMO_USERNAME \$DEMO_PASSWORD\"" ;;
   esac
   return 1 2>/dev/null || exit 1
 fi
