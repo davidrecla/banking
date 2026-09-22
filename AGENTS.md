@@ -30,11 +30,16 @@ npm run deploy       # wrangler deploy (rarely needed -- main auto-deploys)
 
 `main` is the production branch and **auto-deploys to
 https://banking.davidrecla.workers.dev via Cloudflare Workers Builds on
-every push**. Feature branches also auto-build and get their own preview
-URL. Use the branch -> PR -> check the preview URL -> merge workflow in
-`BUILD-PLAN.md` note 8; do not push directly to `main` for anything
-non-trivial. This applies to dependency and config changes too, not just
-code -- see the lockfile note below.
+every push**. Per standing user instruction (2026-09-22), "sync to GitHub"
+means **commit and push straight to `main` — no feature branches, no PRs**;
+this overrides the older branch → PR → preview workflow (BUILD-PLAN.md note 8)
+even for non-trivial work. The branch/PR workflow remains available if
+explicitly requested. Caveat to keep in mind, not to litigate: without PR
+previews, a push to `main` deploys immediately — docs/tooling changes like
+POC-ATTACK-GUIDE.html are zero-risk, but verify Worker-affecting changes
+(`wrangler deploy --dry-run`, tests) before pushing. This applies to
+dependency and config changes too, not just code -- see the lockfile note
+below.
 
 ## Project location -- keep this on C:
 

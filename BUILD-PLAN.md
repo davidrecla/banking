@@ -14,7 +14,7 @@
 - **Page routing:** `/` is the public marketing homepage, `/login` is the login form, `/dashboard` and `/uploads` are the authenticated pages. Note `/` was the login page until the homepage was added — `app.js` redirects unauthenticated/logged-out users to `/login`, not `/`.
 - **GitHub repo:** `davidrecla/banking` (branch `main` = production, auto-deploys via Cloudflare Workers Builds on every push)
 - **Cloudflare Worker name:** `banking`, account "Pure Grounds Coffee Co." (account ID `0feb844d7ff36330cdd00ed24797fe85`)
-- **Workflow:** create a feature branch → commit/push → open a PR → Cloudflare posts a preview URL on the PR check → review → merge PR into `main` → Cloudflare auto-deploys to production. Do **not** push directly to `main` for non-trivial changes.
+- **Workflow:** commit and push directly to `main` — the user's standing instruction (2026-09-22) is that "sync to GitHub" always means straight to `main`, no feature branches or PRs. Mind the consequence: every push auto-deploys to production via Workers Builds, so dry-run/test Worker-affecting changes first. Branches/PRs only if explicitly requested.
 - **Tooling available locally:** `wrangler` (authenticated via `CLOUDFLARE_API_TOKEN` env var), `gh` (GitHub CLI, authenticated as `davidrecla`) — both already set up, see "Local Environment Notes" below.
 
 ### File structure
