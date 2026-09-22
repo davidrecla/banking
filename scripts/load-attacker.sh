@@ -30,11 +30,14 @@ BASE="${BASE_URL:-https://banking.puregroundscoffee.com}"
 # Fixed demo identity on purpose: no env overrides (a stray DEMO_USERNAME
 # export on the demo laptop once made this script log in as the wrong user
 # on stage). The other scripts still honor DEMO_USERNAME/DEMO_PASSWORD.
-USERNAME="chris.brown"
-PASSWORD="cbrown123"
+# NOTE: do NOT name these USERNAME/PASSWORD — zsh (the macOS default shell)
+# predefines $USERNAME as the local login name and the collision sent an
+# "admin"-user login on the demo Mac. Use ATTACKER_* instead.
+ATTACKER_USER="chris.brown"
+ATTACKER_PASS="cbrown123"
 # Build the JSON body with printf (single-quoted literal — no shell escaping
 # pitfalls regardless of bash/zsh/Git Bash).
-BODY=$(printf '{"username":"%s","password":"%s"}' "$USERNAME" "$PASSWORD")
+BODY=$(printf '{"username":"%s","password":"%s"}' "$ATTACKER_USER" "$ATTACKER_PASS")
 
 RESP=$("${CURL[@]}" -w $'\n%{http_code}' -X POST -H 'Content-Type: application/json' \
   -d "$BODY" "$BASE/api/auth/login")
@@ -57,7 +60,7 @@ export BASE TOKEN SAVINGS_ID
 printf 'export BASE=%q\nexport TOKEN=%q\nexport SAVINGS_ID=%q\n' \
   "$BASE" "$TOKEN" "$SAVINGS_ID" > /tmp/pgc-attacker.env
 
-echo "attacker session loaded: $USERNAME @ $BASE"
+echo "attacker session loaded: $ATTACKER_USER @ $BASE"
 echo "  savings account: $SAVINGS_ID"
 echo "  extra terminals: source /tmp/pgc-attacker.env   (skips login, same session)"
 echo "  token expires in 24h — source this script again tomorrow"
