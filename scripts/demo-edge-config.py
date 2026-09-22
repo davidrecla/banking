@@ -115,16 +115,42 @@ def validation_action(z):
 # JSON logins with {username, password} — exactly our POST /api/auth/login.
 EXPOSED_CREDS_RULESET_ID = "c2e184081120413c86c3ab7e14069605"
 
+# Cloudflare Sensitive Data Detection managed ruleset (response-body scan).
+# Deployed via the dashboard (Security -> Data -> Sensitive Data Detection);
+# it is NOT prefixed "PGC demo:" and this tool never modifies it — it is a
+# log/detect-only scan, safe to leave on in both demo states. arm/disarm
+# merely detect and report it.
+SDD_RULESET_ID = "e22d83c647c64a3eae91b71b499d988e"
+
+
+def _rule_executes(r, ruleset_id):
+    return r.get("action") == "execute" and \
+        r.get("action_parameters", {}).get("id") == ruleset_id
+
+
+def sdd_status(z):
+    existing = get_ruleset(z, "http_response_firewall_managed")
+    found = [r for r in (existing["rules"] if existing else []) if _rule_executes(r, SDD_RULESET_ID)]
+    if not found:
+        print("  [??] Sensitive Data Detection NOT deployed — enable via dashboard: Security -> Data -> Sensitive Data Detection -> Managed ruleset")
+    for r in found:
+        print(f"  [{'on' if r.get('enabled') else 'off'}] Sensitive Data Detection ruleset (dashboard-managed, detect-only — leave on)")
+
 
 def apply_managed_rule(z, enabled):
-    """Add/enable/isable the exposed-credential-check execute rule in the
-    managed phase, preserving the zone's existing managed rules."""
+    """Create (once) and arm/disarm the exposed-credential-check execute rule
+    in the managed phase. Toggles with the rest of the demo: off in the
+    "before" state so UC-03 shows nothing flagged, on in the "after" state so
+    pwned-pair logins surface in Security Events. Preserves every other
+    managed-phase rule (incl. the dashboard-deployed SDD rule)."""
     phase = "http_request_firewall_managed"
     existing = get_ruleset(z, phase)
     if not existing:
         raise RuntimeError("no managed-phase entrypoint ruleset found — expected OWASP + Managed rulesets")
     current = existing["rules"]
-    keep = [r for r in current if not r.get("description", "").startswith(RULE_PREFIX)]
+    keep = [r for r in current
+            if not r.get("description", "").startswith(RULE_PREFIX)
+            and not _rule_executes(r, EXPOSED_CREDS_RULESET_ID)]
     ours = {
         "description": f"{RULE_PREFIX} exposed credential check on login",
         "expression": f'(http.host eq "{HOST}")',
@@ -139,11 +165,14 @@ def apply_managed_rule(z, enabled):
 
 def managed_rule_status(z):
     existing = get_ruleset(z, "http_request_firewall_managed")
-    ours = [r for r in (existing["rules"] if existing else []) if r.get("description", "").startswith(RULE_PREFIX)]
+    rules = existing["rules"] if existing else []
+    ours = [r for r in rules if r.get("description", "").startswith(RULE_PREFIX)
+            or _rule_executes(r, EXPOSED_CREDS_RULESET_ID)]
     for r in ours:
         print(f"  [{'on' if r.get('enabled') else 'off'}] {r['description']}")
     if not ours:
         print("  (no demo rules in http_request_firewall_managed)")
+    sdd_status(z)
 
 
 # --- Custom + rate-limit rules ----------------------------------------------
@@ -268,12 +297,14 @@ def main():
         apply_rules(z, "http_request_firewall_custom", CUSTOM_RULES, True)
         apply_rules(z, "http_ratelimit", RATE_LIMIT_RULES, True)
         apply_managed_rule(z, True)
+        sdd_status(z)
         set_validation_action(z, "block")
     elif cmd == "disarm":
         print("disarming protections (demo BEFORE / staging state):")
         apply_rules(z, "http_request_firewall_custom", CUSTOM_RULES, False)
         apply_rules(z, "http_ratelimit", RATE_LIMIT_RULES, False)
         apply_managed_rule(z, False)
+        sdd_status(z)
         set_validation_action(z, "log")
     elif cmd == "status":
         print(f"  schema validation default action: {validation_action(z)}")

@@ -80,6 +80,15 @@ the same shell with the same token. `wrangler.toml` intentionally carries no
 If you hit it, just retry; only investigate the token (`npx wrangler
 whoami`, and `BUILD-PLAN.md` notes 3 and 5) if it fails repeatedly.
 
+## Customer-facing POC plan
+
+The customer-facing POC plan for this engagement lives in Google Drive (user-owned,
+edited there -- treat it as the external spec this demo must match):
+https://docs.google.com/document/d/17s4V1Z3ctmQmUW4q1cN2H9L67xUGeBMzHRO6q2lH2S0/edit
+Read it through the Google Workspace MCP (docs_get), never from a local stub. Note:
+the Drive *search* tool was intermittently broken (2026-09-22); direct doc reads by
+URL/ID work.
+
 ## Verified-healthy baseline
 
 Last confirmed working in production: homepage returns 200, `/api/accounts`
