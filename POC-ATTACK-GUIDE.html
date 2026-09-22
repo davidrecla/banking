@@ -318,6 +318,7 @@ then return every toggle to Off and schema validation to Log before you leave th
 
   <div class="attack">
     <h5>Attack 1.1 · Malicious upload from the browser (most visual)</h5>
+    <div class="meta" style="font-size:12px">browser only — no Terminal needed</div>
     <ul class="tight">
       <li>Private window, logged in as <code>chris.brown</code> → homepage → <b>"File uploads, scanned before they land"</b> → upload the EICAR test file (<code>/tmp/eicar.com</code>, created in Attack 1.2).</li>
       <li><span class="pill before">BEFORE</span> 201 — file lands in Documents (clean it up from the Documents page afterwards).</li>
@@ -328,6 +329,7 @@ then return every toggle to Off and schema validation to Log before you leave th
 
   <div class="attack">
     <h5>Attack 1.2 · Malicious upload via API (exactly what the button does)</h5>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$BASE</code> — provided by <code>source scripts/load-attacker.sh</code> (or <code>source /tmp/pgc-attacker.env</code>)</div>
     <pre><span class="c"># create the industry-standard EICAR anti-malware test string (harmless):</span>
 printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar.com
 
@@ -367,6 +369,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
 
   <div class="attack">
     <h5>Attack 2.1 · Unauthenticated internal dump</h5>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$BASE</code> only — no login needed (that <i>is</i> the attack). <code>$BASE</code> comes from <code>source scripts/load-attacker.sh</code></div>
     <pre>curl -s $BASE/api/internal/debug | grep -o '"ssn":"[^"]*"'</pre>
     <ul class="tight">
       <li><span class="pill before">BEFORE</span> 200 — full user table: password hashes, salts, SSNs, auth config. No credentials needed.</li>
@@ -377,6 +380,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
 
   <div class="attack">
     <h5>Attack 2.2 · Undocumented "internal mode" on the profile endpoint</h5>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$BASE</code> — from <code>source scripts/load-attacker.sh</code></div>
     <pre>curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/profile?internal=1" | grep -o '"ssn":"[^"]*"'</pre>
     <ul class="tight">
       <li><span class="pill before">BEFORE</span> 200 — an undocumented query param flips the endpoint to full-record mode (session payload, SSN, raw account rows).</li>
@@ -414,6 +418,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
 
   <div class="attack">
     <h5>Attack 3.1 · Login with breached credentials (credential stuffing / password reuse)</h5>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$BASE</code> only — no token (the point is logging in with a <i>stolen</i> pair). <code>$BASE</code> comes from <code>source scripts/load-attacker.sh</code></div>
     <pre>curl -s -o /dev/null -w "leaked-cred login attempt -> %{http_code}\n" \
   -X POST -H 'Content-Type: application/json' \
   -d '{"username":"CF_EXPOSED_USERNAME","password":"CF_EXPOSED_PASSWORD"}' \
@@ -428,6 +433,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
 
   <div class="attack">
     <h5>Attack 3.2 · Same attack through the login UI (visual beat)</h5>
+    <div class="meta" style="font-size:12px">browser only — no Terminal needed</div>
     <ul class="tight">
       <li>Browser → <code>$BASE/login</code> → enter the same test pair: with the rule Off it fails as a normal bad login; with the rule On the edge blocks it outright. Emphasize: the protection fires only when the <i>submitted pair is known-breached</i> — legitimate users see zero change.</li>
     </ul>
@@ -457,6 +463,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
 
   <div class="attack">
     <h5>Attack 4.1 · Transfer burst — abuse of a no-limiter endpoint</h5>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$SAVINGS_ID</code>, <code>$BASE</code> — all three come from <code>source scripts/load-attacker.sh</code></div>
     <pre>for i in $(seq 1 20); do
   curl -s -o /dev/null -w "transfer $i -> %{http_code}\n" \
     -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
@@ -472,6 +479,7 @@ done</pre>
 
   <div class="attack">
     <h5>Attack 4.2 · Balance enumeration (BOLA harvesting)</h5>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$BASE</code> — from <code>source scripts/load-attacker.sh</code></div>
     <pre><span class="c"># gather victim ids from the debug dump (run UC-2's Attack 2.1 first), then enumerate:</span>
 IDS=$(curl -s $BASE/api/internal/debug \
   | grep -oE '"id":"[0-9a-f-]{36}"' | cut -d'"' -f4 | sort -u)
@@ -511,6 +519,7 @@ done</pre>
 
   <div class="attack">
     <h5>Attack 5.1 · The shadow API</h5>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$BASE</code> — from <code>source scripts/load-attacker.sh</code></div>
     <pre>curl -s -H "Authorization: Bearer $TOKEN" $BASE/api/v1/accounts
 <span class="c"># and the never-removed cross-user override on it:</span>
 curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/accounts?userId=f49a7d79-e6dc-4c91-ba4a-5d62be9f81e7"</pre>
@@ -524,6 +533,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/accounts?userId=f49a7d79
 
   <div class="attack">
     <h5>Attack 5.2 · Malformed payload — the error-surface attack</h5>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$BASE</code> — from <code>source scripts/load-attacker.sh</code></div>
     <pre>curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{not json' $BASE/api/debug/parse</pre>
     <ul class="tight">
