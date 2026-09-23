@@ -177,7 +177,10 @@ git pull</pre>
   <h3>3.5 — API Shield: schema validation + session identifier</h3>
   <ol class="tight">
     <li>Sidebar: <b>Security → API Shield</b>.</li>
-    <li>Open <b>Schema Validation</b>: the schema <code>openapi-schema</code> must be listed as uploaded and enabled (that's <code>openapi-schema.yaml</code> from the repo, uploaded via API Shield).</li>
+    <li>Open <b>Schema Validation</b>: in staging the list should show <b>no schema — by design</b>. You upload
+    it yourself, live, as the first move of UC-5 (dashboard auto-names the record <code>openapi-schema.yaml</code>
+    after the file; an API-uploaded record would be named <code>openapi-schema</code>). If a schema is already
+    listed from a rehearsal, that's fine — rehearsals can pre-upload; the meeting-day wow is the live upload.</li>
     <li>Find the <b>default action</b> setting — it must be <b>Log</b> (staging), not Block. You'll flip this live in UC-5.</li>
     <li>Open API Shield <b>Settings</b>: <b>Session identifiers</b> must include the JWT <code>sub</code> claim.</li>
   </ol>
@@ -185,7 +188,9 @@ git pull</pre>
   deleting the schema in Schema Validation silently deletes the synced endpoint inventory with it (learned
   2026-09-23). Recovery: re-upload <code>openapi-schema.yaml</code>, then once from a terminal with the API
   token set: <code>python3 scripts/demo-edge-config.py sync</code> — that restores the operations list.
-  Web Assets is host-filtered; make sure the host dropdown shows <code>banking.puregroundscoffee.com</code>.</div>
+  Web Assets is host-filtered; make sure the host dropdown shows <code>banking.puregroundscoffee.com</code>.
+  For the live demo flow the schema is deliberately absent in staging: upload it yourself on camera in UC-5
+  (dashboard names the record after the file — expected).</div>
 
   <h3>3.6 — Sensitive Data Detection (stays On, always)</h3>
   <ol class="tight">
@@ -284,8 +289,9 @@ git pull</pre>
   check should still pass armed:</p>
   <pre>./attack-simulation.sh after
 ./test-api.sh</pre>
-  <p>Finish by returning the zone to staging: every <code>PGC demo:</code> toggle Off, schema validation
-  back to Log (Step 3's one-line checklist).</p>
+  <p>Finish by returning the zone to staging: every <code>PGC demo:</code> toggle Off and schema validation
+  back to Log. The uploaded schema may stay for rehearsals (harmless at Log) — delete it the morning of the
+  meeting if you want the live-upload beat in UC-5.</p>
   <div class="box good"><b>Verification status (measured, not planned):</b> test-api.sh 39/39 PASS ·
   attack-simulation.sh before 11/11 VULNERABLE · after 11/11 BLOCKED · legitimate traffic re-tested while
   armed — all 200s.</div>
@@ -576,7 +582,8 @@ curl -s -H "Authorization: Bearer $TOKEN" "https://banking.puregroundscoffee.com
 
   <div class="arm"><b class="tag">Arm in the dashboard</b>
   <ol class="tight">
-    <li>Sidebar: <b>Security → API Shield</b> → <b>Schema Validation</b> → change the default action from <b>Log</b> to <b>Block</b>. Say: "the uploaded OpenAPI contract is now enforced."</li>
+    <li><b>Upload the contract live:</b> sidebar <b>Security → API Shield → Schema Validation</b> → <b>Add/Upload schema</b> → choose the repo file <code>openapi-schema.yaml</code>. Dashboard names the record after the file. Expected: <b>no warnings</b> (the multipart uploads op is intentionally omitted — schema validation can't inspect upload bodies; that's what the content-scanning rule is for). Endpoint inventory populates from the upload.</li>
+    <li>Still in <b>Schema Validation</b>: change the default action from <b>Log</b> to <b>Block</b>. Say: "the OpenAPI contract we just uploaded is now enforced."</li>
     <li>Sidebar: <b>Security → WAF</b> → <b>Custom rules</b> tab → set <b>On</b>: <code>PGC demo: fallthrough block (ops outside the OpenAPI schema)</code>. Say: "and anything the contract doesn't mention is assumed hostile."</li>
     <li>Re-run Attack 5.1 and 5.2 — both die at the edge.</li>
   </ol></div>
@@ -588,8 +595,9 @@ curl -s -H "Authorization: Bearer $TOKEN" "https://banking.puregroundscoffee.com
     excessive-data-exposure talking point on base <code>/api/profile</code> ·
     oversized JSON body to <code>/api/transfers/batch</code> → automatic 413 plan-tier body limit.</span>
   </div>
-  <div class="box"><b>Leave the zone staged:</b> before you close — all 8 <code>PGC demo:</code> toggles
-  back Off + schema validation back to Log (the Step 3 checklist). Forward-looking close: ML posture features —
+  <div class="box"><b>Leave the zone staged:</b> before you close — all 7 <code>PGC demo:</code> toggles
+  back Off + schema validation back to Log (the Step 3 checklist; the uploaded schema may stay unless you
+  want the live-upload beat next time — then delete it that morning). Forward-looking close: ML posture features —
   BOLA enumeration risk labels, Volumetric Abuse recommendations — accrue over weeks of production traffic;
   today showed the deterministic layer.</div>
 </div>

@@ -59,7 +59,7 @@ def zone_id():
 def sync_schema(z):
     source = open(SCHEMA_FILE, encoding="utf-8").read()
     existing = api("GET", f"/zones/{z}/schema_validation/schemas")
-    match = [s for s in existing if s["name"] in ("openapi-schema", "pgc-bank-openapi")]
+    match = [s for s in existing if s["name"] in ("openapi-schema", "openapi-schema.yaml", "pgc-bank-openapi")]
     if match:
         print(f"  schema '{match[0]['name']}' already uploaded ({match[0]['schema_id'][:8]}...) — leaving as-is")
     else:
