@@ -18,7 +18,6 @@ info:
   description: Demo banking API for the PGC Bank Cloudflare security showcase.
 servers:
   - url: https://banking.puregroundscoffee.com
-  - url: https://banking.davidrecla.workers.dev
 
 security:
   - bearerAuth: []
