@@ -143,6 +143,14 @@ git pull</pre>
   <p><b>If one is missing:</b> on the same tab → <b>Create rule → Custom rule</b> → name it exactly as in the
   table → switch the expression editor to <b>Edit expression</b> and paste the expression → set action
   <b>Block</b> → <b>Deploy</b> → then toggle it <b>Off</b> so the zone stays staged.</p>
+  <div class="box"><b>If you want this one rule demoed in the visual expression builder:</b> the first row
+  (the <code>/api/internal/debug</code> rule) is expressible in builder terms — Hostname equals the host ·
+  URI Path equals the path · <b>Request header authorization does not contain "Bearer "</b> — but the current
+  text-mode expression (with its parenthesized <code>not (…)</code>) may not auto-convert when you click
+  "Use expression builder". If so, rebuild the rule <i>once</i> through the builder itself (same three rows,
+  action Block): builder-authored rules stay builder-editable, and behavior is identical (verified live:
+  no-auth → 403, Bearer → 200). <b>Do not drop the parentheses in text mode as a shortcut</b> — without them
+  the <code>not</code> rebinding inverts the rule and blocks logged-in users instead of the attack.</div>
 
   <h3>3.3 — The three rate limiting rules</h3>
   <ol class="tight">

@@ -161,6 +161,14 @@ CUSTOM_RULES = [
         "enabled": True,
     },
     {
+        # Parentheses around the not(...) clause are load-bearing: removing
+        # them rebinds the `not` and INVERTS the rule (verified 2026-09-23 —
+        # unparenthesized form blocked Bearer logins and let no-auth through).
+        # The dashboard visual builder may not round-trip this expression; if
+        # it needs to be shown in builder view, recreate the rule once via the
+        # builder UI (Hostname = host, URI Path = path, Request header
+        # authorization does not contain "Bearer ") — builder-authored rules
+        # stay builder-editable.
         "description": f"{RULE_PREFIX} block unauthenticated /api/internal/debug",
         "expression": f'(http.host eq "{HOST}" and http.request.uri.path eq "/api/internal/debug" and not (http.request.headers["authorization"][0] contains "Bearer "))',
         "action": "block",
