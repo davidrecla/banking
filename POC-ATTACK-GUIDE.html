@@ -103,8 +103,8 @@ guide — the customer sees each control exactly where their own admins would us
 
 <div class="step">
   <h4>Step 2 · Get the code</h4>
-  <pre><span class="c"># pick any folder you like, then:</span>
-git clone https://github.com/davidrecla/banking.git
+  <p>Pick any folder you like, then:</p>
+  <pre>git clone https://github.com/davidrecla/banking.git
 cd banking
 git pull</pre>
   <p><b>Success looks like:</b> <code>ls</code> shows <code>attack-simulation.sh</code> and <code>test-api.sh</code>.
@@ -263,12 +263,14 @@ git pull</pre>
   ever needs cleanup.</p>
 
   <h3>The full rehearsal loop</h3>
-  <pre>./test-api.sh                  <span class="c"># expect: 39 passed, 0 failed</span>
-./attack-simulation.sh before  <span class="c"># expect: every line VULNERABLE</span></pre>
+  <p><code>test-api.sh</code> expects 39 passed / 0 failed; <code>attack-simulation.sh before</code> expects every line VULNERABLE:</p>
+  <pre>./test-api.sh
+./attack-simulation.sh before</pre>
   <p>Then arm every toggle from Step 3 <b>in the dashboard</b> (this doubles as your click-path rehearsal
-  for Steps 3.2–3.5) and run:</p>
-  <pre>./attack-simulation.sh after   <span class="c"># expect: every line BLOCKED
-</span>./test-api.sh                  <span class="c"># armed, still: 39 passed, 0 failed</span></pre>
+  for Steps 3.2–3.5) and run the "after" pass — every line should print BLOCKED, then the legitimate
+  check should still pass armed:</p>
+  <pre>./attack-simulation.sh after
+./test-api.sh</pre>
   <p>Finish by returning the zone to staging: every <code>PGC demo:</code> toggle Off, schema validation
   back to Log (Step 3's one-line checklist).</p>
   <div class="box good"><b>Verification status (measured, not planned):</b> test-api.sh 39/39 PASS ·
@@ -339,10 +341,9 @@ then return every toggle to Off and schema validation to Log before you leave th
   <div class="attack">
     <h5>Attack 1.2 · Malicious upload via API (exactly what the button does)</h5>
     <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code> (or <code>source /tmp/pgc-attacker.env</code>)</div>
-    <pre><span class="c"># create the industry-standard EICAR anti-malware test string (harmless):</span>
-printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar.com
+    <p style="font-size:13px">First line creates the industry-standard EICAR anti-malware test string as a harmless local file; the rest uploads it and prints <b>one</b> verdict line. All lines are zsh-safe (no <code>#</code> comments; paste as-is on macOS Terminal).</p>
+    <pre>printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar.com
 
-<span class="c"># upload it; print ONE verdict line (no response-body dump on either state)</span>
 RESP=$(curl -s -w $'\n%{http_code}' -X POST \
   -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/eicar.com" \
   https://banking.puregroundscoffee.com/api/uploads)
@@ -497,8 +498,8 @@ done</pre>
   <div class="attack">
     <h5>Attack 4.2 · Balance enumeration (BOLA harvesting)</h5>
     <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code> (run 2.1 first to harvest the ids)</div>
-    <pre><span class="c"># gather victim ids from the debug dump (works in BEFORE), then enumerate:</span>
-IDS=$(curl -s https://banking.puregroundscoffee.com/api/internal/debug \
+    <p style="font-size:13px">Gathers victim user-ids from the debug dump (works in BEFORE), then enumerates every balance:</p>
+    <pre>IDS=$(curl -s https://banking.puregroundscoffee.com/api/internal/debug \
   | grep -oE '"id":"[0-9a-f-]{36}"' | cut -d'"' -f4 | sort -u)
 for uid in $IDS; do
   curl -s -o /dev/null -w "balance $uid -> %{http_code}\n" \
@@ -537,8 +538,8 @@ done</pre>
   <div class="attack">
     <h5>Attack 5.1 · The shadow API</h5>
     <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code></div>
+    <p style="font-size:13px">First call hits the shadow API; the second adds the never-removed cross-user override on it:</p>
     <pre>curl -s -H "Authorization: Bearer $TOKEN" https://banking.puregroundscoffee.com/api/v1/accounts
-<span class="c"># and the never-removed cross-user override on it:</span>
 curl -s -H "Authorization: Bearer $TOKEN" "https://banking.puregroundscoffee.com/api/v1/accounts?userId=f49a7d79-e6dc-4c91-ba4a-5d62be9f81e7"</pre>
     <ul class="tight">
       <li><span class="pill before">BEFORE</span> 200 — undocumented verbose rows, plus other users' data via the override.</li>
