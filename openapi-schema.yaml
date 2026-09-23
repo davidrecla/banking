@@ -34,6 +34,7 @@ paths:
             schema:
               type: object
               required: [username, password]
+              additionalProperties: false   # closed shape: undeclared fields (e.g. smuggled "role") are contract violations
               properties:
                 username: { type: string }
                 password: { type: string }

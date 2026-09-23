@@ -72,7 +72,11 @@ echo
 UNAUTH=$("${CURL[@]}" -s -w " %{http_code}" -o /tmp/tapi.$$ "$BASE_URL/api/accounts" && true)
 expect "GET /api/accounts without token -> 401" "401" "401 $(cat /tmp/tapi.$$)"; rm -f /tmp/tapi.$$
 
-expect "POST /api/auth/login empty body -> 400" "400" "$("${CURL[@]}" -s -w '%{http_code} ' -X POST -H 'Content-Type: application/json' -d '{}' -o /tmp/tapi.$$ "$BASE_URL/api/auth/login"; cat /tmp/tapi.$$)"; rm -f /tmp/tapi.$$
+LOGIN_EMPTY=$("${CURL[@]}" -s -w '%{http_code} ' -X POST -H 'Content-Type: application/json' -d '{}' -o /tmp/tapi.$$ "$BASE_URL/api/auth/login"; cat /tmp/tapi.$$); rm -f /tmp/tapi.$$
+case "${LOGIN_EMPTY%% *}" in
+  400|403) ok "POST /api/auth/login empty body -> 400 (or 403 when schema validation is armed)" ;;
+  *) bad "POST /api/auth/login empty body -> 400" "expected 400/403, got ${LOGIN_EMPTY%% *}" ;;
+esac
 
 expect "POST /api/auth/login wrong password -> 401" "401" "$("${CURL[@]}" -s -w '%{http_code} ' -X POST -H 'Content-Type: application/json' -d "{\"username\":\"$USERNAME\",\"password\":\"wrong-password\"}" -o /tmp/tapi.$$ "$BASE_URL/api/auth/login"; cat /tmp/tapi.$$)"; rm -f /tmp/tapi.$$
 

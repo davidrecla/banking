@@ -544,59 +544,59 @@ done</pre>
 
 <!-- ============ UC-5 ============ -->
 <div class="uc">
-  <h4>UC-5 · API Shield: Discovery + Schema Validation</h4>
+  <h4>UC-5 · API Shield: Schema Validation (contract enforcement) + Discovery</h4>
   <div class="meta">Plan criterion (optional use case): <i>"Enable API Discovery to inventory API endpoints; apply Schema Validation to reject non-conforming requests; valid requests pass; events logged."</i></div>
   <div class="kv">
-    <b>Feature showcased</b><span><b>API Discovery</b> (finds operations in live traffic, incl. shadow APIs) · <b>Schema Validation</b> (uploaded OpenAPI contract, Log → Block; strict typing rejects malformed bodies) · the <b>fallthrough rule</b> (<code>cf.api_gateway.fallthrough_detected</code> — anything not in the contract is hostile) · session identifier = JWT <code>sub</code>.</span>
-    <b>Environment attacked</b><span>A deprecated v1 endpoint that was never decommissioned, and a debug endpoint that explodes on malformed JSON.</span>
+    <b>Feature showcased</b><span><b>Schema Validation on the uploaded OpenAPI contract</b> — endpoint action Log → Block; strict typing, required fields, method and content-type checks enforced at the edge with zero per-attack rules. Bonus: <b>API Discovery</b> panel shows the shadow API (no block implied; see optional extra).</span>
+    <b>Environment attacked</b><span><code>POST /api/auth/login</code> — the public login endpoint with a declared two-string contract.</span>
   </div>
 
   <div class="attack">
-    <h5>Attack 5.1 · The shadow API</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code></div>
-    <p style="font-size:13px">First call hits the shadow API; the second adds the never-removed cross-user override on it:</p>
-    <pre>curl -s -H "Authorization: Bearer $TOKEN" https://banking.puregroundscoffee.com/api/v1/accounts
-curl -s -H "Authorization: Bearer $TOKEN" "https://banking.puregroundscoffee.com/api/v1/accounts?userId=f49a7d79-e6dc-4c91-ba4a-5d62be9f81e7"</pre>
+    <h5>Attack 5.1 · Conforming request — the control case (must always pass)</h5>
+    <div class="meta" style="font-size:12px">Terminal: fully standalone — full URL inline, nothing to load</div>
+    <pre>curl -s -w "\nHTTP %{http_code}\n" -X POST -H 'Content-Type: application/json' \
+  -d '{"username":"chris.brown","password":"cbrown123"}' \
+  https://banking.puregroundscoffee.com/api/auth/login</pre>
     <ul class="tight">
-      <li><span class="pill before">BEFORE</span> 200 — undocumented verbose rows, plus other users' data via the override.</li>
-      <li><b>Security → API Shield → Discovery</b>: <code>GET /api/v1/accounts</code> listed as an operation absent from the uploaded schema — the shadow API, found without any agent or config.</li>
-      <li><span class="pill after">AFTER</span> 403 — fallthrough rule blocks every operation outside the contract.</li>
+      <li><span class="pill before">BEFORE</span> 200 + token. <span class="pill after">AFTER</span> <b>still 200 + token</b> — the contract recognizes good traffic; enforcement is invisible to it.</li>
+      <li>Say: <i>"same call the login page makes. Nothing changed for it — that's the point of a contract."</i></li>
     </ul>
-    <div class="kv"><b>Blocked by</b><span>custom rule <code>PGC demo: fallthrough block (ops outside the OpenAPI schema)</code> on <code>cf.api_gateway.fallthrough_detected</code> — this is what "the contract is enforced" looks like as a rule. In Events the event names this rule; <b>API Shield → Discovery</b> is where the shadow op was first spotted.</span></div>
   </div>
 
   <div class="attack">
-    <h5>Attack 5.2 · Malformed payload — the error-surface attack</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code></div>
-    <pre>curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{not json' https://banking.puregroundscoffee.com/api/debug/parse</pre>
+    <h5>Attack 5.2 · Type-confused payload — the fuzzing/smuggling probe</h5>
+    <div class="meta" style="font-size:12px">Terminal: fully standalone — full URL inline, nothing to load</div>
+    <p style="font-size:13px">The contract declares <code>username</code> must be a <b>string</b>. The attacker sends a <b>number</b> (classic type-confusion recon on JSON APIs):</p>
+    <pre>curl -s -w "\nHTTP %{http_code}\n" -X POST -H 'Content-Type: application/json' \
+  -d '{"username":12345,"password":"c"}' \
+  https://banking.puregroundscoffee.com/api/auth/login</pre>
     <ul class="tight">
-      <li><span class="pill before">BEFORE</span> 500 with a JavaScript stack trace and internal file paths — recon gold.</li>
-      <li><span class="pill after">AFTER</span> 403/400 at the edge — schema strict typing + fallthrough: garbage never reaches the app, so there's no error surface to mine.</li>
+      <li><span class="pill before">BEFORE</span> (action Log): flows through to the app, which answers its own 401 — the violation was seen but allowed.</li>
+      <li><span class="pill after">AFTER</span> (action Block): <b>403, Cloudflare error code 1020</b> — rejected by the contract at the edge; the Worker never runs. (Measured live — this exact output.)</li>
+      <li>Same shape of block covers: missing required field, malformed unparseable JSON, empty <code>{}</code> body — all 403/1020 with zero rules written per attack.</li>
     </ul>
-    <div class="kv"><b>Blocked by</b><span><b>schema validation</b> (default action <b>Block</b> on the <code>openapi-schema</code> contract — <b>Security → API Shield → Schema Validation</b>) rejects the malformed body; the fallthrough custom rule is the alternate catcher since <code>/api/debug/parse</code> is undocumented. The Security Events row names whichever matched.</span></div>
+    <div class="kv"><b>Blocked by</b><span><b>Schema validation itself</b> — the per-endpoint Action = Block on <code>POST /api/auth/login</code> in Security → API Shield → Schema Validation. No WAF custom rule involved. Honest note: schema validation does <i>not</i> reject extra undeclared body fields (<code>additionalProperties</code> isn't enforced) — the smuggled-field variant passes, so we demo the type-mismatch form.</span></div>
   </div>
 
   <div class="arm"><b class="tag">Arm in the dashboard</b>
   <ol class="tight">
-    <li><b>Upload the contract live:</b> sidebar <b>Security → API Shield → Schema Validation</b> → <b>Add/Upload schema</b> → choose the repo file <code>openapi-schema.yaml</code>. Dashboard names the record after the file. Expected: <b>no warnings</b> (the multipart uploads op is intentionally omitted — schema validation can't inspect upload bodies; that's what the content-scanning rule is for). Endpoint inventory populates from the upload.</li>
-    <li>Still in <b>Schema Validation</b>: change the default action from <b>Log</b> to <b>Block</b>. Say: "the OpenAPI contract we just uploaded is now enforced."</li>
-    <li>Sidebar: <b>Security → WAF</b> → <b>Custom rules</b> tab → set <b>On</b>: <code>PGC demo: fallthrough block (ops outside the OpenAPI schema)</code>. Say: "and anything the contract doesn't mention is assumed hostile."</li>
-    <li>Re-run Attack 5.1 and 5.2 — both die at the edge.</li>
+    <li><b>Show the contract first:</b> Security → API Shield → Schema Validation → the uploaded <code>openapi-schema.yaml</code>. Open the /api/auth/login row — the two-string parameter contract is visible on screen. (If no schema is listed — meeting-morning flow — this is the upload moment: Add/Upload schema, pick the file, expect no warnings.)</li>
+    <li>On the <code>/api/auth/login</code> row: change <b>Action: Log → Block</b>. Say: "the contract is now enforced — not a single pattern rule written."</li>
+    <li>Re-run 5.1 (still 200) then 5.2 (now 403/1020). The <b>Non-compliant requests</b> column on the schema page ticks up as you go — that's your live counter.</li>
   </ol></div>
 
   <div class="kv">
-    <b>Finale</b><span>With everything now armed: <code>./attack-simulation.sh after</code> — every line BLOCKED — then <code>./test-api.sh</code> → 39/39, legitimate traffic untouched. That's the whole story in two commands.</span>
+    <b>Finale</b><span>With everything now armed: <code>./attack-simulation.sh after</code> — every line BLOCKED — then <code>./test-api.sh</code> → 39/39, legitimate traffic untouched. (The empty-login-body check now accepts 403-from-edge as a pass — expected when the endpoint sits on Block.)</span>
     <b>Optional extras</b><span>
-    Privilege escalation that moves money (apply $3000 → <code>POST /api/admin/loans/&lt;id&gt;/force-approve</code> as a regular user: before it disburses, after 403 — refresh chris.brown's dashboard for the money shot) ·
-    excessive-data-exposure talking point on base <code>/api/profile</code> ·
-    oversized JSON body to <code>/api/transfers/batch</code> → automatic 413 plan-tier body limit.</span>
+    <b>Unknown paths:</b> the shadow API <code>GET /api/v1/accounts</code> appears in <b>Discovery</b> as absent from the contract; to block unknown operations wholesale, arm the fallthrough rule (<code>PGC demo: fallthrough block</code>) — one custom rule covering everything the contract never mentions.
+    Privilege-escalation loan fraud (<code>/api/admin/loans/&lt;id&gt;/force-approve</code>) and the 500-stack-trace endpoint demo that same fallthrough rule. · oversized JSON body → 413 plan-tier limit.</span>
   </div>
   <div class="box"><b>Leave the zone staged:</b> before you close — all 6 <code>PGC demo:</code> toggles
-  back Off + schema validation back to Log (the Step 3 checklist; the uploaded schema may stay unless you
-  want the live-upload beat next time — then delete it that morning). Forward-looking close: ML posture features —
+  back Off + the endpoint actions back to Log (the Step 3 checklist; the uploaded schema may stay, or delete
+  it meeting-morning if you want the live-upload beat). Forward-looking close: ML posture features —
   ML object-probing risk labels, Volumetric Abuse recommendations — accrue over weeks of production traffic;
   today showed the deterministic layer.</div>
+</div>
 </div>
 
 </section>
