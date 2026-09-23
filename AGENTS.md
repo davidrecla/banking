@@ -94,6 +94,18 @@ Read it through the Google Workspace MCP (docs_get), never from a local stub. No
 the Drive *search* tool was intermittently broken (2026-09-22); direct doc reads by
 URL/ID work.
 
+## Cloudflare zone edits require a go signal (NEW standing rule, 2026-09-23)
+
+Never write to the demo zone's security configuration (rules, schemas,
+rate limits, detections, rule toggles) without the user's explicit
+approval first. Read-only audits via API/demo-edge-config.py status are
+always fine. The operator makes manual dashboard edits too — treat any
+non-"PGC demo:" rule ("Leaked Credentials Rule", "Content Scanning (Block
+Malware)", etc.) as theirs; never modify, reorder, or delete them.
+My mistakes this rule exists because of: schema delete+re-upload silently
+cascade-deleted the synced endpoint ops; a mid-test PUT order flipped a
+user rule state.
+
 ## Verified-healthy baseline
 
 Last confirmed working in production: homepage returns 200, `/api/accounts`
