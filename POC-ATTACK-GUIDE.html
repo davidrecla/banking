@@ -181,6 +181,11 @@ git pull</pre>
     <li>Find the <b>default action</b> setting — it must be <b>Log</b> (staging), not Block. You'll flip this live in UC-5.</li>
     <li>Open API Shield <b>Settings</b>: <b>Session identifiers</b> must include the JWT <code>sub</code> claim.</li>
   </ol>
+  <div class="box warn"><b>If Web Assets looks empty (or shows only the workers.dev host):</b> replacing or
+  deleting the schema in Schema Validation silently deletes the synced endpoint inventory with it (learned
+  2026-09-23). Recovery: re-upload <code>openapi-schema.yaml</code>, then once from a terminal with the API
+  token set: <code>python3 scripts/demo-edge-config.py sync</code> — that restores the operations list.
+  Web Assets is host-filtered; make sure the host dropdown shows <code>banking.puregroundscoffee.com</code>.</div>
 
   <h3>3.6 — Sensitive Data Detection (stays On, always)</h3>
   <ol class="tight">
