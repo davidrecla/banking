@@ -208,12 +208,14 @@ RATE_LIMIT_RULES = [
         },
     },
     {
+        # Also upgraded to per-session counting (operator, dashboard,
+        # 2026-09-23) — both UC-4 rules key on the Authorization header.
         "description": f"{RULE_PREFIX} loan/investment spam rate limit",
         "expression": f'(http.host eq "{HOST}" and http.request.method eq "POST" and (http.request.uri.path eq "/api/loans/apply" or http.request.uri.path eq "/api/investments"))',
         "action": "block",
         "enabled": True,
         "ratelimit": {
-            "characteristics": ["ip.src", "cf.colo.id"],
+            "characteristics": ['http.request.headers["authorization"]', "cf.colo.id"],
             "requests_to_origin": False,
             "requests_per_period": 5,
             "period": 60,
