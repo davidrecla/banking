@@ -201,8 +201,7 @@ git pull</pre>
   <ul class="tight">
     <li>Logs in as chris.brown with his password and stores the returned <b>session token</b> (a JWT — a 24-hour "key card"; from here on you show the card, not the password) as <code>$TOKEN</code>.</li>
     <li>Looks up his <b>savings account id</b> and stores it as <code>$SAVINGS_ID</code> — money-moving attacks need a destination account.</li>
-    <li>Sets <code>$BASE</code> (the app URL) so the commands can just write <code>$BASE/api/…</code>.</li>
-    <li>Saves all three to <code>/tmp/pgc-attacker.env</code> — a <b>second Terminal window</b> can skip the login entirely with <code>source /tmp/pgc-attacker.env</code>.</li>
+    <li>Saves the session to <code>/tmp/pgc-attacker.env</code> — a <b>second Terminal window</b> can skip the login entirely with <code>source /tmp/pgc-attacker.env</code>.</li>
   </ul>
 
   <div class="box warn"><b>Two things beginners trip on:</b><br>
@@ -292,10 +291,10 @@ git pull</pre>
 <p>Five use cases from the Metrobank POC plan, executed against the banking demo app. Each use case lists
 the Cloudflare feature it proves, the two attacks, and the exact dashboard toggle you flip — live, with
 the customer — to make the same attack fail.</p>
-<div class="box"><b>Before any attack command:</b> from the repo folder, run
-<code>source scripts/load-attacker.sh</code> — that one line gives this Terminal the attacker session
-(<code>$BASE</code>, <code>$TOKEN</code>, <code>$SAVINGS_ID</code>). New window?
-<code>source /tmp/pgc-attacker.env</code> restores it without re-logging in.</div>
+<div class="box"><b>One-time session prep:</b> attacks that need to look like a logged-in customer use the
+attacker's token, <code>$TOKEN</code>. Set it once for the day, from the repo folder:
+<code>source scripts/load-attacker.sh</code> (second Terminal window: <code>source /tmp/pgc-attacker.env</code>).
+Unauthenticated attacks (2.1, 3.1) are fully standalone — full URL inline, nothing to load.</div>
 
 <div class="box">
 <b>Why are we attacking this app and not the customer's environment?</b> Say this out loud early — it
@@ -339,14 +338,14 @@ then return every toggle to Off and schema validation to Log before you leave th
 
   <div class="attack">
     <h5>Attack 1.2 · Malicious upload via API (exactly what the button does)</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$BASE</code> — provided by <code>source scripts/load-attacker.sh</code> (or <code>source /tmp/pgc-attacker.env</code>)</div>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code> (or <code>source /tmp/pgc-attacker.env</code>)</div>
     <pre><span class="c"># create the industry-standard EICAR anti-malware test string (harmless):</span>
 printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar.com
 
 curl -s -w "\nHTTP %{http_code}\n" -X POST \
-  -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/eicar.com" $BASE/api/uploads</pre>
+  -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/eicar.com" https://banking.puregroundscoffee.com/api/uploads</pre>
     <ul class="tight">
-      <li><span class="pill before">BEFORE</span> 201 + upload id (cleanup: <code>curl -s -X DELETE -H "Authorization: Bearer $TOKEN" $BASE/api/uploads/&lt;id&gt;</code>).</li>
+      <li><span class="pill before">BEFORE</span> 201 + upload id (cleanup: <code>curl -s -X DELETE -H "Authorization: Bearer $TOKEN" https://banking.puregroundscoffee.com/api/uploads/&lt;id&gt;</code>).</li>
       <li><span class="pill after">AFTER</span> 403 from content scanning, before R2 is touched.</li>
     </ul>
     <div class="kv"><b>Blocked by</b><span>same rule as 1.1: <code>PGC demo: block malicious uploads (content scanning)</code>. In Events you can filter by rule name to see every attempt.</span></div>
@@ -379,8 +378,8 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
 
   <div class="attack">
     <h5>Attack 2.1 · Unauthenticated internal dump</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$BASE</code> only — no login needed (that <i>is</i> the attack). <code>$BASE</code> comes from <code>source scripts/load-attacker.sh</code></div>
-    <pre>curl -s $BASE/api/internal/debug | grep -o '"ssn":"[^"]*"'</pre>
+    <div class="meta" style="font-size:12px">Terminal, fully standalone — full URL inline; no login, no loader (that <i>is</i> the attack)</div>
+    <pre>curl -s https://banking.puregroundscoffee.com/api/internal/debug | grep -o '"ssn":"[^"]*"'</pre>
     <ul class="tight">
       <li><span class="pill before">BEFORE</span> 200 — full user table: password hashes, salts, SSNs, auth config. No credentials needed.</li>
       <li><span class="pill after">AFTER</span> 403 — the leak path is dead.</li>
@@ -390,8 +389,8 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
 
   <div class="attack">
     <h5>Attack 2.2 · Undocumented "internal mode" on the profile endpoint</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$BASE</code> — from <code>source scripts/load-attacker.sh</code></div>
-    <pre>curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/profile?internal=1" | grep -o '"ssn":"[^"]*"'</pre>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code></div>
+    <pre>curl -s -H "Authorization: Bearer $TOKEN" "https://banking.puregroundscoffee.com/api/profile?internal=1" | grep -o '"ssn":"[^"]*"'</pre>
     <ul class="tight">
       <li><span class="pill before">BEFORE</span> 200 — an undocumented query param flips the endpoint to full-record mode (session payload, SSN, raw account rows).</li>
       <li><span class="pill after">AFTER</span> 403 — the contract declares no query string at all on this path.</li>
@@ -428,11 +427,11 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
 
   <div class="attack">
     <h5>Attack 3.1 · Login with breached credentials (credential stuffing / password reuse)</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$BASE</code> only — no token (the point is logging in with a <i>stolen</i> pair). <code>$BASE</code> comes from <code>source scripts/load-attacker.sh</code></div>
+    <div class="meta" style="font-size:12px">Terminal, fully standalone — full URL inline; no token (the point is logging in with a <i>stolen</i> pair), no loader</div>
     <pre>curl -s -o /dev/null -w "leaked-cred login attempt -> %{http_code}\n" \
   -X POST -H 'Content-Type: application/json' \
   -d '{"username":"CF_EXPOSED_USERNAME","password":"CF_EXPOSED_PASSWORD"}' \
-  $BASE/api/auth/login</pre>
+  https://banking.puregroundscoffee.com/api/auth/login</pre>
     <ul class="tight">
       <li><code>CF_EXPOSED_USERNAME</code> / <code>CF_EXPOSED_PASSWORD</code> are <b>Cloudflare's official test credentials</b> — guaranteed breach-corpus hits, so this demo is deterministic. No hunting for real pwned pairs (a genuinely pwned pair, e.g. from haveibeenpwned, works just as well if you prefer).</li>
       <li><span class="pill before">BEFORE</span> (rule toggled Off): request flows to the app → 401 "invalid credentials" — the stolen pair sails straight through.</li>
@@ -445,7 +444,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
     <h5>Attack 3.2 · Same attack through the login UI (visual beat)</h5>
     <div class="meta" style="font-size:12px">browser only — no Terminal needed</div>
     <ul class="tight">
-      <li>Browser → <code>$BASE/login</code> → enter the same test pair: with the rule Off it fails as a normal bad login; with the rule On the edge blocks it outright. Emphasize: the protection fires only when the <i>submitted pair is known-breached</i> — legitimate users see zero change.</li>
+      <li>Browser → <code>https://banking.puregroundscoffee.com/login</code> → enter the same test pair: with the rule Off it fails as a normal bad login; with the rule On the edge blocks it outright. Emphasize: the protection fires only when the <i>submitted pair is known-breached</i> — legitimate users see zero change.</li>
     </ul>
     <div class="kv"><b>Blocked by</b><span>same rule as 3.1: <code>Leaked Credentials Rule</code> — the UI login posts to the same endpoint, so the same policy catches it.</span></div>
   </div>
@@ -473,12 +472,12 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
 
   <div class="attack">
     <h5>Attack 4.1 · Transfer burst — abuse of a no-limiter endpoint</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$SAVINGS_ID</code>, <code>$BASE</code> — all three come from <code>source scripts/load-attacker.sh</code></div>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> and <code>$SAVINGS_ID</code> — both from <code>source scripts/load-attacker.sh</code></div>
     <pre>for i in $(seq 1 20); do
   curl -s -o /dev/null -w "transfer $i -> %{http_code}\n" \
     -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
     -d "{\"fromAccountId\":\"$SAVINGS_ID\",\"toUsername\":\"sarah.johnson\",\"toAccountType\":\"savings\",\"amount\":0.01,\"note\":\"burst $i\"}" \
-    $BASE/api/transfers/express
+    https://banking.puregroundscoffee.com/api/transfers/express
 done</pre>
     <ul class="tight">
       <li><span class="pill before">BEFORE</span> 20 × 201 — every $0.01 transfer completes (show a few landing in chris.brown's transaction history).</li>
@@ -489,13 +488,13 @@ done</pre>
 
   <div class="attack">
     <h5>Attack 4.2 · Balance enumeration (BOLA harvesting)</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$BASE</code> — from <code>source scripts/load-attacker.sh</code></div>
-    <pre><span class="c"># gather victim ids from the debug dump (run UC-2's Attack 2.1 first), then enumerate:</span>
-IDS=$(curl -s $BASE/api/internal/debug \
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code> (run 2.1 first to harvest the ids)</div>
+    <pre><span class="c"># gather victim ids from the debug dump (works in BEFORE), then enumerate:</span>
+IDS=$(curl -s https://banking.puregroundscoffee.com/api/internal/debug \
   | grep -oE '"id":"[0-9a-f-]{36}"' | cut -d'"' -f4 | sort -u)
 for uid in $IDS; do
   curl -s -o /dev/null -w "balance $uid -> %{http_code}\n" \
-    -H "Authorization: Bearer $TOKEN" $BASE/api/users/$uid/balance
+    -H "Authorization: Bearer $TOKEN" https://banking.puregroundscoffee.com/api/users/$uid/balance
 done</pre>
     <ul class="tight">
       <li><span class="pill before">BEFORE</span> every customer's balance, harvested in seconds by one ordinary user.</li>
@@ -529,10 +528,10 @@ done</pre>
 
   <div class="attack">
     <h5>Attack 5.1 · The shadow API</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$BASE</code> — from <code>source scripts/load-attacker.sh</code></div>
-    <pre>curl -s -H "Authorization: Bearer $TOKEN" $BASE/api/v1/accounts
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code></div>
+    <pre>curl -s -H "Authorization: Bearer $TOKEN" https://banking.puregroundscoffee.com/api/v1/accounts
 <span class="c"># and the never-removed cross-user override on it:</span>
-curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/accounts?userId=f49a7d79-e6dc-4c91-ba4a-5d62be9f81e7"</pre>
+curl -s -H "Authorization: Bearer $TOKEN" "https://banking.puregroundscoffee.com/api/v1/accounts?userId=f49a7d79-e6dc-4c91-ba4a-5d62be9f81e7"</pre>
     <ul class="tight">
       <li><span class="pill before">BEFORE</span> 200 — undocumented verbose rows, plus other users' data via the override.</li>
       <li><b>Security → API Shield → Discovery</b>: <code>GET /api/v1/accounts</code> listed as an operation absent from the uploaded schema — the shadow API, found without any agent or config.</li>
@@ -543,9 +542,9 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/accounts?userId=f49a7d79
 
   <div class="attack">
     <h5>Attack 5.2 · Malformed payload — the error-surface attack</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code>, <code>$BASE</code> — from <code>source scripts/load-attacker.sh</code></div>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code></div>
     <pre>curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{not json' $BASE/api/debug/parse</pre>
+  -d '{not json' https://banking.puregroundscoffee.com/api/debug/parse</pre>
     <ul class="tight">
       <li><span class="pill before">BEFORE</span> 500 with a JavaScript stack trace and internal file paths — recon gold.</li>
       <li><span class="pill after">AFTER</span> 403/400 at the edge — schema strict typing + fallthrough: garbage never reaches the app, so there's no error surface to mine.</li>
