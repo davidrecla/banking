@@ -94,7 +94,7 @@ Read it through the Google Workspace MCP (docs_get), never from a local stub. No
 the Drive *search* tool was intermittently broken (2026-09-22); direct doc reads by
 URL/ID work.
 
-## Cloudflare zone edits require a go signal (NEW standing rule, 2026-09-23)
+## Cloudflare zone edits require a go signal (standing rule, 2026-09-23)
 
 Never write to the demo zone's security configuration (rules, schemas,
 rate limits, detections, rule toggles) without the user's explicit
@@ -105,6 +105,13 @@ Malware)", etc.) as theirs; never modify, reorder, or delete them.
 My mistakes this rule exists because of: schema delete+re-upload silently
 cascade-deleted the synced endpoint ops; a mid-test PUT order flipped a
 user rule state.
+
+**Tightened same day, after a staging test left residue:** all dashboard/
+zone configuration is operator-only, period — including demo-edge-config.py
+sync/arm/disarm. Do not run zone-writing commands at all unless the user
+asks for that exact action in that exact message. If a stage-verification
+test seems to require toggling, ask first and specify exactly what will
+be set to what, and what reverts when.
 
 ## Verified-healthy baseline
 
