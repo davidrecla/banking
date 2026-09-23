@@ -155,13 +155,12 @@ git pull</pre>
   <h3>3.3 — The three rate limiting rules</h3>
   <ol class="tight">
     <li>Still under <b>Security → WAF</b>, click the <b>Rate limiting rules</b> tab.</li>
-    <li>You should see three <code>PGC demo: …</code> rules, each <b>Off</b>. Correct any that are On.</li>
+    <li>You should see two <code>PGC demo: …</code> rules, each <b>Off</b>. Correct any that are On.</li>
   </ol>
   <table>
-    <tr><th>Rule name (exact)</th><th>Match expression</th><th>Rate</th><th>Action / timeout</th></tr>
-    <tr><td><code>PGC demo: BOLA enumeration rate limit</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.uri.path matches "^/api/users/[^/]+/balance$")</code></td><td>5 requests / 30 seconds</td><td>Block / 60 seconds</td></tr>
-    <tr><td><code>PGC demo: express-transfer burst rate limit</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.uri.path eq "/api/transfers/express")</code></td><td>10 requests / 60 seconds</td><td>Block / 120 seconds</td></tr>
-    <tr><td><code>PGC demo: loan/investment spam rate limit</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.method eq "POST" and (http.request.uri.path eq "/api/loans/apply" or http.request.uri.path eq "/api/investments"))</code></td><td>5 requests / 60 seconds</td><td>Block / 120 seconds</td></tr>
+    <tr><th>Rule name (exact)</th><th>Match expression</th><th>Rate</th><th>Counts per</th><th>Action / timeout</th></tr>
+    <tr><td><code>PGC demo: express-transfer burst rate limit</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.uri.path eq "/api/transfers/express")</code></td><td>10 requests / 60 seconds</td><td><b>Authorization header value</b> (per session token) + colo — advanced characteristic</td><td>Block / 120 seconds</td></tr>
+    <tr><td><code>PGC demo: loan/investment spam rate limit</code></td><td><code>(http.host eq "banking.puregroundscoffee.com" and http.request.method eq "POST" and (http.request.uri.path eq "/api/loans/apply" or http.request.uri.path eq "/api/investments"))</code></td><td>5 requests / 60 seconds</td><td>IP with NAT support</td><td>Block / 120 seconds</td></tr>
   </table>
   <p><b>If one is missing:</b> same tab → <b>Create rule</b> → name it → paste the expression under
   "When incoming requests match…" → set the rate and action from the table → <b>Characteristics:</b> leave
@@ -200,8 +199,8 @@ git pull</pre>
   </ol>
 
   <div class="box good"><b>Staging checklist, one line:</b> 4 custom <code>PGC demo:</code> rules Off ·
-  3 rate limits Off · schema validation at Log · SDD On · leaked-credential detection On ·
-  Leaked Credentials Rule On. That's the whole state.</div>
+  2 rate limits Off · schema validation at Log (schema list empty = live UC-5 upload) · SDD On ·
+  leaked-credential detection On · Leaked Credentials Rule On. That's the whole state.</div>
 </div>
 
 <div class="step">
@@ -299,7 +298,7 @@ git pull</pre>
 
 <div class="step">
   <h4>Step 6 · Demo morning (2 minutes)</h4>
-  <div class="checkline"><div class="boxit"></div><div>Dashboard: re-walk Step 3 subsections 3.2–3.6 — the one-line staging checklist holds (4 PGC custom rules Off · 3 rate limits Off · schema at Log · SDD On · leaked-credential detection On · Leaked Credentials Rule On).</div></div>
+  <div class="checkline"><div class="boxit"></div><div>Dashboard: re-walk Step 3 subsections 3.2–3.6 — the one-line staging checklist holds (4 PGC custom rules Off · 2 rate limits Off · schema at Log · SDD On · leaked-credential detection On · Leaked Credentials Rule On).</div></div>
   <div class="checkline"><div class="boxit"></div><div>Terminal: <code>cd</code> into the repo, then <code>source scripts/load-attacker.sh</code>.</div></div>
   <div class="checkline"><div class="boxit"></div><div>Browser tabs open: zone → <b>Security → Events</b>; <b>Security → API Shield</b> (Discovery / Web Assets); <b>Security → WAF</b> (your toggling station for the meeting); the app logged in as <b>admin</b>; a private window logged in as <b>chris.brown</b> (the attacker's UI session — the homepage upload button uses it).</div></div>
   <div class="checkline"><div class="boxit"></div><div>If the room goes sideways: the staging state is just the Step 3 one-line checklist — you can always get back in under a minute.</div></div>
@@ -494,8 +493,8 @@ else echo "UNEXPECTED (HTTP $CODE) — likely the local-network upload proxy, se
   <h4>UC-4 · Advanced Rate Limiting</h4>
   <div class="meta">Plan criterion: <i>"Generate traffic exceeding the configured threshold; offending clients are throttled/blocked while legitimate traffic is unaffected; events visible in analytics."</i></div>
   <div class="kv">
-    <b>Feature showcased</b><span><b>Rate limiting rules</b> on sensitive endpoints (express-transfer burst 10/min, BOLA-path enumeration 5 per 30s; characteristics <code>ip.src + cf.colo.id</code> — the same engine supports counters on any characteristic: session, header, JWT claim).</span>
-    <b>Environment attacked</b><span>An express transfer endpoint with no in-app limiter, and a per-user balance endpoint with no ownership check (enumeration is inherently high-rate).</span>
+    <b>Feature showcased</b><span><b>Advanced Rate Limiting</b> on sensitive endpoints with custom counting characteristics: the express-transfer rule counts <b>per Authorization header value</b> (per logged-in session — IP rotation is useless against it); the loan/investment rule counts per IP+NAT (right key for pre-auth-style abuse).</span>
+    <b>Environment attacked</b><span>An express transfer endpoint with no in-app limiter, and the loan-application endpoint with no frequency cap.</span>
   </div>
 
   <div class="attack">
@@ -509,39 +508,38 @@ else echo "UNEXPECTED (HTTP $CODE) — likely the local-network upload proxy, se
 done</pre>
     <ul class="tight">
       <li><span class="pill before">BEFORE</span> 20 × 201 — every $0.01 transfer completes (show a few landing in chris.brown's transaction history).</li>
-      <li><span class="pill after">AFTER</span> ten 201s, then <b>429s</b> — this is a pure rate-limit block: with only the rate limit armed, nothing else stands in the way. Contrast: the app's real transfer endpoint enforces the same control in code; here it's zero code at the edge.</li>
+      <li><span class="pill after">AFTER</span> ten 201s, then <b>429s</b> — pure rate-limit block: with only the rate limit armed, nothing else stands in the way. Because the rule now counts <b>per Authorization header</b>, narrate: "the meter rides with the session — renting more IPs doesn't help." Contrast: the app's real transfer endpoint enforces this in code; here it's zero code at the edge.</li>
     </ul>
-    <div class="kv"><b>Blocked by</b><span>rate limiting rule <code>PGC demo: express-transfer burst rate limit</code> (10 requests/60s → 429, 120s timeout). <i>Note: after UC-5 arms the fallthrough rule, this path also 403s outright — the 429 pure rate-limit story works while fallthrough is still Off.</i></span></div>
+    <div class="kv"><b>Blocked by</b><span>rate limiting rule <code>PGC demo: express-transfer burst rate limit</code> (10 requests/60s per <b>Authorization header value</b> → 429, 120s timeout). <i>Note: after UC-5 arms the fallthrough rule, this path also 403s outright — the 429 pure rate-limit story works while fallthrough is still Off.</i></span></div>
   </div>
 
   <div class="attack">
-    <h5>Attack 4.2 · Balance enumeration (BOLA harvesting)</h5>
-    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code> (run 2.1 first to harvest the ids)</div>
-    <p style="font-size:13px">Gathers victim user-ids from the debug dump (works in BEFORE), then enumerates every balance:</p>
-    <pre>IDS=$(curl -s https://banking.puregroundscoffee.com/api/internal/debug \
-  | grep -oE '"id":"[0-9a-f-]{36}"' | cut -d'"' -f4 | sort -u)
-for uid in $IDS; do
-  curl -s -o /dev/null -w "balance $uid -> %{http_code}\n" \
-    -H "Authorization: Bearer $TOKEN" https://banking.puregroundscoffee.com/api/users/$uid/balance
+    <h5>Attack 4.2 · Loan-application spam (no frequency cap)</h5>
+    <div class="meta" style="font-size:12px">Terminal: uses <code>$TOKEN</code> — from <code>source scripts/load-attacker.sh</code></div>
+    <p style="font-size:13px">Eight rapid $2000 applications from one ordinary customer (app auto-holds them for review; nothing disburses):</p>
+    <pre>for i in $(seq 1 8); do
+  curl -s -o /dev/null -w "application $i -> %{http_code}\n" \
+    -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"amount":2000,"termMonths":12}' \
+    https://banking.puregroundscoffee.com/api/loans/apply
 done</pre>
     <ul class="tight">
-      <li><span class="pill before">BEFORE</span> every customer's balance, harvested in seconds by one ordinary user.</li>
-      <li><span class="pill after">AFTER</span> 5 reads per 30 seconds, then 429 with a 60-second timeout — enumeration slowed to uselessness. Be precise here: rate limiting throttles the harvest; UC-5's schema contract removes the path entirely (it's an undocumented op). Re-run <code>./test-api.sh</code> while armed: 39/39 green — legitimate users untouched.</li>
+      <li><span class="pill before">BEFORE</span> 8 × 201 in seconds — nothing limits applications per customer.</li>
+      <li><span class="pill after">AFTER</span> five 201s then 429s — 5/min per client with a 120s timeout.</li>
     </ul>
-    <div class="kv"><b>Blocked by</b><span>rate limiting rule <code>PGC demo: BOLA enumeration rate limit</code> (5 requests/30s → 429, 60s timeout). After UC-5 is armed, custom rule <code>PGC demo: fallthrough block</code> 403s the path entirely.</span></div>
+    <div class="kv"><b>Blocked by</b><span>rate limiting rule <code>PGC demo: loan/investment spam rate limit</code> (5 requests/60s per IP+NAT → 429). Good contrast beat: pre-auth-style abuse counts per network; authenticated abuse (4.1) counts per session.</span></div>
   </div>
 
   <div class="arm"><b class="tag">Arm in the dashboard</b>
   <ol class="tight">
     <li>Sidebar: <b>Security → WAF</b> → <b>Rate limiting rules</b> tab.</li>
     <li>Set <b>On</b>: <code>PGC demo: express-transfer burst rate limit</code>.</li>
-    <li>Set <b>On</b>: <code>PGC demo: BOLA enumeration rate limit</code>.</li>
-    <li>Open either rule and show the counting expression: <code>ip.src + cf.colo.id</code>, 10 requests in 60s — then say it can just as easily count per session token, header, or JWT claim.</li>
+    <li>Set <b>On</b>: <code>PGC demo: loan/investment spam rate limit</code>.</li>
+    <li>Open the express rule and show its <b>characteristics</b>: <code>http.request.headers["authorization"]</code> + colo — then say it can count per session token, cookie, query arg, JWT claim, or any request property. That's the "advanced" in Advanced Rate Limiting.</li>
   </ol></div>
 
   <div class="kv">
     <b>Dashboard beat</b><span><b>Security → Events</b>, last 15 minutes — every throttled request named by rule. Forward-looking pair: <b>Volumetric Abuse Detection</b> learns per-endpoint baselines and recommends limits automatically (needs weeks of production traffic — positioned, not demoed).</span>
-    <b>Optional extra</b><span>Loan-application spam: 8 rapid <code>POST /api/loans/apply</code> ($2000 each, all auto-pending) → arm <code>PGC demo: loan/investment spam rate limit</code> too and watch five 201s then 429s (5/min rule).</span>
   </div>
 </div>
 
@@ -595,10 +593,10 @@ curl -s -H "Authorization: Bearer $TOKEN" "https://banking.puregroundscoffee.com
     excessive-data-exposure talking point on base <code>/api/profile</code> ·
     oversized JSON body to <code>/api/transfers/batch</code> → automatic 413 plan-tier body limit.</span>
   </div>
-  <div class="box"><b>Leave the zone staged:</b> before you close — all 7 <code>PGC demo:</code> toggles
+  <div class="box"><b>Leave the zone staged:</b> before you close — all 6 <code>PGC demo:</code> toggles
   back Off + schema validation back to Log (the Step 3 checklist; the uploaded schema may stay unless you
   want the live-upload beat next time — then delete it that morning). Forward-looking close: ML posture features —
-  BOLA enumeration risk labels, Volumetric Abuse recommendations — accrue over weeks of production traffic;
+  ML object-probing risk labels, Volumetric Abuse recommendations — accrue over weeks of production traffic;
   today showed the deterministic layer.</div>
 </div>
 

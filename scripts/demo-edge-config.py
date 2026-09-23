@@ -193,25 +193,14 @@ CUSTOM_RULES = [
 
 RATE_LIMIT_RULES = [
     {
-        "description": f"{RULE_PREFIX} BOLA enumeration rate limit",
-        "expression": f'(http.host eq "{HOST}" and http.request.uri.path matches "^/api/users/[^/]+/balance$")',
-        "action": "block",
-        "enabled": True,
-        "ratelimit": {
-            "characteristics": ["ip.src", "cf.colo.id"],
-            "requests_to_origin": False,
-            "requests_per_period": 5,
-            "period": 30,
-            "mitigation_timeout": 60,
-        },
-    },
-    {
+        # Counts per Authorization header value (= per logged-in session) —
+        # upgraded to advanced characteristics in the dashboard 2026-09-23.
         "description": f"{RULE_PREFIX} express-transfer burst rate limit",
         "expression": f'(http.host eq "{HOST}" and http.request.uri.path eq "/api/transfers/express")',
         "action": "block",
         "enabled": True,
         "ratelimit": {
-            "characteristics": ["ip.src", "cf.colo.id"],
+            "characteristics": ['http.request.headers["authorization"]', "cf.colo.id"],
             "requests_to_origin": False,
             "requests_per_period": 10,
             "period": 60,
