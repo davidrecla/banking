@@ -342,11 +342,18 @@ then return every toggle to Off and schema validation to Log before you leave th
     <pre><span class="c"># create the industry-standard EICAR anti-malware test string (harmless):</span>
 printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar.com
 
-curl -s -w "\nHTTP %{http_code}\n" -X POST \
-  -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/eicar.com" https://banking.puregroundscoffee.com/api/uploads</pre>
+<span class="c"># upload it; print ONE verdict line (no response-body dump on either state)</span>
+RESP=$(curl -s -w $'\n%{http_code}' -X POST \
+  -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/eicar.com" \
+  https://banking.puregroundscoffee.com/api/uploads)
+CODE=${RESP##*$'\n'}
+if [ "$CODE" = 403 ]; then   echo "BLOCKED (HTTP 403) — content scanning stopped EICAR at the edge"
+elif [ "$CODE" = 201 ]; then echo "NOT BLOCKED (HTTP 201) — file stored: $(printf '%s' "$RESP" | sed -n 's/.*"id":"\([^"]*\)".*/id \1/p')"
+else echo "UNEXPECTED (HTTP $CODE) — likely the local-network upload proxy, see note below"; fi</pre>
     <ul class="tight">
-      <li><span class="pill before">BEFORE</span> 201 + upload id (cleanup: <code>curl -s -X DELETE -H "Authorization: Bearer $TOKEN" https://banking.puregroundscoffee.com/api/uploads/&lt;id&gt;</code>).</li>
-      <li><span class="pill after">AFTER</span> 403 from content scanning, before R2 is touched.</li>
+      <li><span class="pill before">BEFORE</span> prints <code>NOT BLOCKED (HTTP 201) — file stored: id &lt;uuid&gt;</code>. Cleanup with that id: <code>curl -s -X DELETE -H "Authorization: Bearer $TOKEN" https://banking.puregroundscoffee.com/api/uploads/&lt;id&gt;</code></li>
+      <li><span class="pill after">AFTER</span> prints <code>BLOCKED (HTTP 403) — …</code>. Nothing reaches R2.</li>
+      <li>Want to show the raw block page on request? Optional rerun: <code>curl -i -X POST -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/eicar.com" https://banking.puregroundscoffee.com/api/uploads</code></li>
     </ul>
     <div class="kv"><b>Blocked by</b><span>same rule as 1.1: <code>PGC demo: block malicious uploads (content scanning)</code>. In Events you can filter by rule name to see every attempt.</span></div>
   </div>
@@ -363,8 +370,9 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST \
   </div>
   <div class="box warn"><b>Network caveat:</b> if this run happens on a network whose proxy inspects
   uploads (e.g. a corporate Cloudflare Gateway), the file may be blocked <i>client-side</i> before it reaches
-  the zone (observed as a 302 to a block page). That is the local network doing its job — switch to a clean
-  hotspot or lead with the UI button: any block proves the file can't reach storage.</div>
+  the zone — the verdict line will read <code>UNEXPECTED (HTTP 302)</code> instead of either expected result.
+  That is the local network doing its job — switch to a clean hotspot or lead with the UI button: any block
+  proves the file can't reach storage.</div>
 </div>
 
 <!-- ============ UC-2 ============ -->
