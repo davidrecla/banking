@@ -44,11 +44,12 @@
   .pill.note { background: #fff3d6; color: var(--amber); }
   .checkline { display: flex; gap: 10px; margin: 7px 0; align-items: flex-start; font-size: 14px; }
   .checkline .boxit { border: 2px solid var(--black); width: 14px; height: 14px; flex: none; margin-top: 3px; }
-  .step { border: 1px solid var(--border); border-top: 4px solid var(--black); border-radius: 6px; padding: 14px 18px; margin: 18px 0; page-break-inside: avoid; }
+  .step { border: 1px solid var(--border); border-top: 4px solid var(--black); border-radius: 6px; padding: 20px 22px; margin: 40px 0; page-break-inside: avoid; }
+  .step > h3:first-child { margin-top: 0; }
   .step h4 { margin: 0 0 6px; font-size: 15px; }
   .attack { border: 1px solid var(--border); border-top: 4px solid var(--red); border-radius: 6px; padding: 14px 18px; margin: 14px 0; page-break-inside: avoid; }
   .attack h5 { margin: 0 0 6px; font-size: 14px; }
-  .uc { border: 2px solid var(--black); border-radius: 8px; padding: 16px 20px; margin: 22px 0; page-break-inside: avoid; }
+  .uc { border: 2px solid var(--black); border-radius: 8px; padding: 16px 20px; margin: 44px 0; page-break-inside: avoid; }
   .uc > h4 { margin: 0 0 4px; font-size: 17px; }
   .uc .meta { font-size: 13px; color: var(--gray); margin-bottom: 8px; }
   .kv { display: grid; grid-template-columns: 160px 1fr; gap: 4px 10px; font-size: 13px; margin: 8px 0; }
@@ -90,48 +91,12 @@
 <section class="tabpage active" id="t0">
 <h2>Tab 1 — Pre-Demo Setup (MacBook Pro)</h2>
 
-<p>Two halves to prepare: a <b>Terminal</b> for running the attacks, and the <b>Cloudflare dashboard</b>
-where every protection gets toggled live during the session. No API tokens, no config scripts in this
-guide — the customer sees each control exactly where their own admins would use it.</p>
-
 <div class="step">
-  <h4>Step 1 · What you need on the table</h4>
-  <div class="checkline"><div class="boxit"></div><div>A MacBook Pro on a clean network (office or hotspot — see the note in UC-1 about networks that intercept uploads).</div></div>
-  <div class="checkline"><div class="boxit"></div><div>Access to the Cloudflare dashboard, account <b>Pure Grounds Coffee Co.</b>, zone <b>puregroundscoffee.com</b>.</div></div>
-  <div class="checkline"><div class="boxit"></div><div>Terminal: open Spotlight (⌘+Space), type <b>Terminal</b>, press Enter.</div></div>
-</div>
-
-<div class="step">
-  <h4>Step 2 · Get the code</h4>
-  <p>Pick any folder you like, then:</p>
-  <pre>git clone https://github.com/davidrecla/banking.git
-cd banking
-git pull</pre>
-  <p><b>Success looks like:</b> <code>ls</code> shows <code>attack-simulation.sh</code> and <code>test-api.sh</code>.
-  <code>curl</code>, <code>git</code>, <code>sed</code> and <code>grep</code> are all built into macOS — nothing else to install.
-  (<code>curl --version</code> to confirm.)</p>
-</div>
-
-<div class="step">
-  <h4>Step 3 · Confirm the zone is staged — in the dashboard</h4>
-  <p>Do this click by click, once, the day before. Everything below should <b>already exist but be switched
-  Off</b> (the staging state) — you are verifying, and learning the exact paths you'll walk live in front of
-  the customer. If anything is missing, each subsection includes a spec table so you can rebuild it in
-  under a minute.</p>
-
-  <h3>3.1 — Open the zone</h3>
-  <ol class="tight">
-    <li>Go to <code>https://dash.cloudflare.com</code> and log in.</li>
-    <li>If asked to pick an account, choose <b>Pure Grounds Coffee Co.</b></li>
-    <li>Click the domain <b>puregroundscoffee.com</b>. You land on the zone's Overview page.</li>
-    <li>Everything in this guide lives in the left sidebar under <b>Security</b>.</li>
-  </ol>
-
-  <h3>3.2 — The four WAF custom rules</h3>
+  <h3>1 — The four WAF custom rules</h3>
   <ol class="tight">
     <li>Sidebar: <b>Security → WAF</b>.</li>
     <li>Click the <b>Custom rules</b> tab.</li>
-    <li>You should see four rules named <code>PGC demo: …</code>. For each, the <b>Enabled</b> toggle must be <b>Off</b> (gray). If one shows On (blue), click the toggle to turn it Off. (You'll also see <code>Leaked Credentials Rule</code> here — it belongs to UC-3 / Step 3.4, and stays On.)</li>
+    <li>You should see four rules named <code>PGC demo: …</code>. For each, the <b>Enabled</b> toggle must be <b>Off</b> (gray). If one shows On (blue), click the toggle to turn it Off. (You'll also see <code>Leaked Credentials Rule</code> here — it belongs to UC-3 / Section 3, and stays On.)</li>
   </ol>
   <table>
     <tr><th>Rule name (exact)</th><th>Expression</th><th>Action</th></tr>
@@ -152,7 +117,10 @@ git pull</pre>
   no-auth → 403, Bearer → 200). <b>Do not drop the parentheses in text mode as a shortcut</b> — without them
   the <code>not</code> rebinding inverts the rule and blocks logged-in users instead of the attack.</div>
 
-  <h3>3.3 — The three rate limiting rules</h3>
+</div>
+
+<div class="step">
+  <h3>2 — Rate limiting rules</h3>
   <ol class="tight">
     <li>Still under <b>Security → WAF</b>, click the <b>Rate limiting rules</b> tab.</li>
     <li>You should see two <code>PGC demo: …</code> rules, each <b>Off</b>. Correct any that are On.</li>
@@ -166,14 +134,20 @@ git pull</pre>
   "When incoming requests match…" → set the rate and action from the table → <b>Characteristics:</b> leave
   the default (<i>IP with NAT support</i> = <code>ip.src + cf.colo.id</code>) → Deploy → toggle <b>Off</b>.</p>
 
-  <h3>3.4 — Leaked credential detection (successor to the old Exposed Credentials Check)</h3>
+</div>
+
+<div class="step">
+  <h3>3 — Leaked credential detection (successor to the old Exposed Credentials Check)</h3>
   <ol class="tight">
     <li>Sidebar: <b>Security → Settings</b> → filter <b>Detection tools</b> → <b>Leaked credential detection</b> must be <b>On</b>. Leave it On in every state — it only annotates requests with <code>cf.waf.credential_check.*</code> fields, never blocks.</li>
     <li>Sidebar: <b>Security → WAF</b> → <b>Custom rules</b> tab → find <code>Leaked Credentials Rule</code> (expression <code>(cf.waf.credential_check.username_and_password_leaked)</code>, action <b>Block</b>, zone-wide). This is the rule UC-3 toggles live; staging state is <b>On</b> — it only fires when a request literally contains a breached username+password pair, so it silently protects the zone between rehearsals without touching any demo traffic.</li>
   </ol>
   <p class="meta" style="color:var(--gray); font-size:12.5px">Note: Cloudflare retired the old <i>Exposed Credentials Check</i> managed ruleset; this detection + custom rule is its replacement and is deliberately <i>not</i> prefixed <code>PGC demo:</code>.</p>
 
-  <h3>3.5 — API Shield: schema validation + session identifier</h3>
+</div>
+
+<div class="step">
+  <h3>4 — API Shield: schema validation + session identifier</h3>
   <ol class="tight">
     <li>Sidebar: <b>Security → API Shield</b>.</li>
     <li>Open <b>Schema Validation</b>: in staging the list should show <b>no schema — by design</b>. You upload
@@ -191,7 +165,10 @@ git pull</pre>
   For the live demo flow the schema is deliberately absent in staging: upload it yourself on camera in UC-5
   (dashboard names the record after the file — expected).</div>
 
-  <h3>3.6 — Sensitive Data Detection (stays On, always)</h3>
+</div>
+
+<div class="step">
+  <h3>5 — Sensitive Data Detection (stays On, always)</h3>
   <ol class="tight">
     <li>Sidebar: <b>Security → Data → Sensitive Data Detection</b>.</li>
     <li>The Cloudflare Sensitive Data Detection managed ruleset must show as deployed/enabled.</li>
@@ -204,43 +181,11 @@ git pull</pre>
 </div>
 
 <div class="step">
-  <h4>Step 4 · Load the attacker session (Terminal)</h4>
-  <p>Every attack in Tab 2 runs as a logged-in customer — <b>chris.brown</b>, an ordinary Regular user.
-  One command does it all (run it from the repo folder):</p>
-<pre>source scripts/load-attacker.sh</pre>
-  <p><b>Success looks like:</b>
-<pre class="nocopy">attacker session loaded: chris.brown @ https://banking.puregroundscoffee.com
-  savings account: 00a22052-b771-…(a UUID)
-  extra terminals: source /tmp/pgc-attacker.env
-  token expires in 24h — source this script again tomorrow</pre></p>
-
-  <h3>What that one command does</h3>
-  <ul class="tight">
-    <li>Logs in as chris.brown with his password and stores the returned <b>session token</b> (a JWT — a 24-hour "key card"; from here on you show the card, not the password) as <code>$TOKEN</code>.</li>
-    <li>Looks up his <b>savings account id</b> and stores it as <code>$SAVINGS_ID</code> — money-moving attacks need a destination account.</li>
-    <li>Saves the session to <code>/tmp/pgc-attacker.env</code> — a <b>second Terminal window</b> can skip the login entirely with <code>source /tmp/pgc-attacker.env</code>.</li>
-  </ul>
-
-  <div class="box warn"><b>Two things beginners trip on:</b><br>
-  ① The <code>source</code> matters — running <code>bash scripts/load-attacker.sh</code> prints a reminder
-  and exits, because variables set in a sub-shell die with it. Open a <b>new Terminal window?</b> Run
-  <code>source /tmp/pgc-attacker.env</code> there (no re-login, respects the 5-per-minute login cap).<br>
-  ② The token expires after 24 hours — <code>source scripts/load-attacker.sh</code> again the next day.</div>
-
-  <p class="meta" style="color:var(--gray); font-size:12.5px">If the script ever misbehaves, the manual
-  fallback is: <code>TOKEN=$(&lt;curl login with username/password JSON&gt;)</code> then
-  <code>SAVINGS_ID=$(&lt;curl /api/accounts with the Bearer header, extract the savings id&gt;)</code> —
-  the script is exactly those two curls plus printing; read it with <code>cat scripts/load-attacker.sh</code>.
-  Note there is no permanent token by design: the app mints a fresh 24h key card per login, and a
-  never-expiring credential would be a real vulnerability in the very app we're presenting.</p>
-</div>
-
-<div class="step">
-  <h4>Step 5 · Rehearse end-to-end (the day before, ~20 minutes)</h4>
+  <h4>6 — Rehearse end-to-end (the day before, ~20 minutes)</h4>
   <p>Two scripts do the rehearsal. You don't need to read or edit them — you run them and read their
-  output. Both are just sequences of the same kind of <code>curl</code> calls you made by hand in Step 4.
-  <b>Both reuse the session from Step 4</b> (<code>source scripts/load-attacker.sh</code>) instead of
-  logging in again — run Step 4 first and you'll see <code>session token reused</code> in their output;
+  output. Both are sequences of <code>curl</code> calls.
+  <b>Both reuse the session loaded in Tab 2's Start Here section</b> instead of
+  logging in again — load that session first and you'll see <code>session token reused</code> in their output;
   if nothing is loaded they log in on their own as a fallback. (The login endpoint caps at 5 attempts/minute
   per user — reuse keeps you far under it.)</p>
 
@@ -283,8 +228,8 @@ git pull</pre>
   <p><code>test-api.sh</code> expects 39 passed / 0 failed; <code>attack-simulation.sh before</code> expects every line VULNERABLE:</p>
   <pre>./test-api.sh
 ./attack-simulation.sh before</pre>
-  <p>Then arm every toggle from Step 3 <b>in the dashboard</b> (this doubles as your click-path rehearsal
-  for Steps 3.2–3.5) and run the "after" pass — every line should print BLOCKED, then the legitimate
+  <p>Then arm the demo protections from Sections 1–4 <b>in the dashboard</b> (this doubles as your click-path
+  rehearsal) and run the "after" pass — every line should print BLOCKED, then the legitimate
   check should still pass armed:</p>
   <pre>./attack-simulation.sh after
 ./test-api.sh</pre>
@@ -297,11 +242,11 @@ git pull</pre>
 </div>
 
 <div class="step">
-  <h4>Step 6 · Demo morning (2 minutes)</h4>
-  <div class="checkline"><div class="boxit"></div><div>Dashboard: re-walk Step 3 subsections 3.2–3.6 — the one-line staging checklist holds (4 PGC custom rules Off · 2 rate limits Off · schema at Log · SDD On · leaked-credential detection On · Leaked Credentials Rule On).</div></div>
-  <div class="checkline"><div class="boxit"></div><div>Terminal: <code>cd</code> into the repo, then <code>source scripts/load-attacker.sh</code>.</div></div>
+  <h4>7 — Demo morning (2 minutes)</h4>
+  <div class="checkline"><div class="boxit"></div><div>Dashboard: re-walk Sections 1–5 — the one-line staging checklist holds (4 PGC custom rules Off · 2 rate limits Off · schema at Log · SDD On · leaked-credential detection On · Leaked Credentials Rule On).</div></div>
+  <div class="checkline"><div class="boxit"></div><div>Terminal: <code>cd</code> into the repo, then follow <b>Tab 2 → Start Here · Load the attacker session</b>.</div></div>
   <div class="checkline"><div class="boxit"></div><div>Browser tabs open: zone → <b>Security → Events</b>; <b>Security → API Shield</b> (Discovery / Web Assets); <b>Security → WAF</b> (your toggling station for the meeting); the app logged in as <b>admin</b>; a private window logged in as <b>chris.brown</b> (the attacker's UI session — the homepage upload button uses it).</div></div>
-  <div class="checkline"><div class="boxit"></div><div>If the room goes sideways: the staging state is just the Step 3 one-line checklist — you can always get back in under a minute.</div></div>
+  <div class="checkline"><div class="boxit"></div><div>If the room goes sideways: the staging state is just the Section 5 one-line checklist — you can always get back in under a minute.</div></div>
 </div>
 </section>
 
@@ -311,10 +256,40 @@ git pull</pre>
 <p>Five use cases from the Metrobank POC plan, executed against the banking demo app. Each use case lists
 the Cloudflare feature it proves, the two attacks, and the exact dashboard toggle you flip — live, with
 the customer — to make the same attack fail.</p>
-<div class="box"><b>One-time session prep:</b> attacks that need to look like a logged-in customer use the
-attacker's token, <code>$TOKEN</code>. Set it once for the day, from the repo folder:
-<code>source scripts/load-attacker.sh</code> (second Terminal window: <code>source /tmp/pgc-attacker.env</code>).
-Unauthenticated attacks (2.1, 3.1) are fully standalone — full URL inline, nothing to load.</div>
+<div class="step" id="attacker-session">
+  <h4>Start Here · Load the attacker session (Terminal)</h4>
+  <p>Attacks that require authentication run as <b>chris.brown</b>, an ordinary Regular user.
+  From the banking repo folder, run this once in the Terminal you will use for the demo:</p>
+<pre>source scripts/load-attacker.sh</pre>
+  <p><b>Success looks like:</b></p>
+<pre class="nocopy">attacker session loaded: chris.brown @ https://banking.puregroundscoffee.com
+  savings account: 00a22052-b771-…(a UUID)
+  extra terminals: source /tmp/pgc-attacker.env
+  token expires in 24h — source this script again tomorrow</pre>
+
+  <h3>What that one command does</h3>
+  <ul class="tight">
+    <li>Logs in as chris.brown with his password and stores the returned <b>session token</b> (a JWT — a 24-hour "key card"; from here on you show the card, not the password) as <code>$TOKEN</code>.</li>
+    <li>Looks up his <b>savings account id</b> and stores it as <code>$SAVINGS_ID</code> — money-moving attacks need a destination account.</li>
+    <li>Saves the session to <code>/tmp/pgc-attacker.env</code> — a <b>second Terminal window</b> can skip the login entirely with:</li>
+  </ul>
+<pre>source /tmp/pgc-attacker.env</pre>
+
+  <div class="box warn"><b>Two things beginners trip on:</b><br>
+  ① The <code>source</code> matters — running <code>bash scripts/load-attacker.sh</code> prints a reminder
+  and exits, because variables set in a sub-shell die with it. Open a <b>new Terminal window?</b> Run
+  <code>source /tmp/pgc-attacker.env</code> there (no re-login, respects the 5-per-minute login cap).<br>
+  ② The token expires after 24 hours — <code>source scripts/load-attacker.sh</code> again the next day.</div>
+
+  <p class="meta" style="color:var(--gray); font-size:12.5px">If the script ever misbehaves, the manual
+  fallback is: <code>TOKEN=$(&lt;curl login with username/password JSON&gt;)</code> then
+  <code>SAVINGS_ID=$(&lt;curl /api/accounts with the Bearer header, extract the savings id&gt;)</code> —
+  the script is exactly those two curls plus printing; read it with <code>cat scripts/load-attacker.sh</code>.
+  Note there is no permanent token by design: the app mints a fresh 24h key card per login, and a
+  never-expiring credential would be a real vulnerability in the very app we're presenting.</p>
+  <p>Unauthenticated attacks (2.1, 3.1) are fully standalone — full URL inline, nothing to load.
+  All session setup for the walkthroughs is here; no Tab 1 session instructions are needed.</p>
+</div>
 
 <div class="box">
 <b>Why are we attacking this app and not the customer's environment?</b> Say this out loud early — it
@@ -592,7 +567,7 @@ done</pre>
     Privilege-escalation loan fraud (<code>/api/admin/loans/&lt;id&gt;/force-approve</code>) and the 500-stack-trace endpoint demo that same fallthrough rule. · oversized JSON body → 413 plan-tier limit.</span>
   </div>
   <div class="box"><b>Leave the zone staged:</b> before you close — all 6 <code>PGC demo:</code> toggles
-  back Off + the endpoint actions back to Log (the Step 3 checklist; the uploaded schema may stay, or delete
+  back Off + the endpoint actions back to Log (the Tab 1 Section 5 staging checklist; the uploaded schema may stay, or delete
   it meeting-morning if you want the live-upload beat). Forward-looking close: ML posture features —
   ML object-probing risk labels, Volumetric Abuse recommendations — accrue over weeks of production traffic;
   today showed the deterministic layer.</div>
